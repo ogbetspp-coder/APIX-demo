@@ -10,7 +10,8 @@
   var i = 0;                 // current step index
   var reviewDone = {};       // regulator review checklist progress
   var reached = {};          // applicant tracker milestones
-  var lastNotif = null;      // most recent notification Bundle (for peek)
+  var lastNotif = null;      // most recent notification Bundle (for tracker peek)
+  var notifLog = [];         // every notification Bundle, in order (conversation peeks)
   var apixDrawn = false;
 
   var APIX_STEPS = ['Connect', 'Stream', 'Describe', 'Orchestrate', 'Subscribe'];
@@ -359,6 +360,7 @@
   function openPeek(ref) {
     if (ref === 'Task') openJson('{ } Task — Type IB variation', store.task);
     else if (ref === 'notif') openJson('{ } Subscription notification Bundle', lastNotif);
+    else if (ref.indexOf('notif-') === 0) openJson('{ } Subscription notification Bundle', notifLog[+ref.slice(6)] || lastNotif);
     else { var r = store.get(ref); if (r) openJson('{ } ' + r.resourceType + (r.content ? ' — ' + r.content[0].attachment.title : ''), r); }
   }
 
@@ -373,9 +375,10 @@
   });
   store.bus.addEventListener('notification', function (ev) {
     lastNotif = ev.detail.bundle;
+    var idx = notifLog.push(ev.detail.bundle) - 1;     // stable per-line peek target
     var msg = bizPlain(ev.detail.businessStatus);
     flyChip('🔔 ' + APIX.display('businessStatus', ev.detail.businessStatus), 'left');
-    convLine('in', '🏛️ Health Authority', '🏭 SynthPharma', '🔔 ' + esc(msg), 'notif');
+    convLine('in', '🏛️ Health Authority', '🏭 SynthPharma', '🔔 ' + esc(msg), 'notif-' + idx);
     setTimeout(function () { renderTracker(ev.detail.businessStatus, ev.detail.businessStatus); }, 520);
   });
 
@@ -385,7 +388,7 @@
   /* ---- reset ------------------------------------------------------------ */
   function resetAll() {
     i = 0; reviewDone = {}; reached = {}; lastNotif = null; apixDrawn = false;
-    ioEntries = [];
+    ioEntries = []; notifLog = [];
     store.reset();
     ['b-sources', 'a-normalize', 'b-spec', 'a-render', 'b-formats', 'pkg', 'tracker', 'reg', 'review', 'reg-flex', 'loopnote', 'conversation'].forEach(function (id) { el(id).hidden = true; });
     ['sources', 'harmonize', 'consolidated', 'pkg', 'reg-docs', 'reg-outputs', 'reg-status', 'review', 'apixsteps', 'lane', 'conv-log', 'io-list'].forEach(function (id) { el(id).innerHTML = ''; });
