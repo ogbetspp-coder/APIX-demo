@@ -94,3 +94,32 @@ Provenance/analytics. Decision stays = approve.
   documented, hand-authored subset (clearly labelled illustrative).
 - Keep animation + inspector tasteful (clean, collapsed) — honour "no JSON wall."
 - `archive/v1/` stays frozen as rollback.
+
+## Compliance & evidence (NORTH STAR — full IG conformance, non-negotiable)
+The audience is skeptical; the proof is conformance + real infrastructure.
+- Every emitted resource validates against **FHIR R5** and the relevant IG
+  profiles: APIX `hl7.fhir.uv.apix`, PQI `hl7.fhir.uv.pharm-quality`.
+- Validate with the **official HL7 FHIR Validator** (`validator_cli.jar`) against
+  the real IG packages; commit the output to `validation/` as evidence, and a
+  `validate.sh` to re-run it. Aim: 0 errors (warnings triaged/justified).
+- **ConceptMap + `$translate` exactly per R5** (build.fhir.org/conceptmap.html):
+  use `group.element.target.relationship` (R5 — NOT R4 `equivalence`); `$translate`
+  returns a `Parameters` with `result` + `match.relationship` + `match.concept`.
+- Where APIX 0.1.0 has no profile (e.g. MedicinalProductDefinition), use base R5
+  and label it — never claim conformance we don't have.
+
+## Deployment (local-first; AWS optional)
+_Per direction: a local setup is fine if it's credible — and it is. Conformance is
+proven by the official validator, and the live seam runs against a **local
+Dockerized HAPI R5**, so we can defeat the "it's fiction" claim with zero cloud.
+AWS stays the preferred hosted option._
+
+- **UI (static):** S3 + CloudFront. The app is pure static (no build), so
+  `aws s3 sync` + a CloudFront invalidation. Ship `deploy/aws-static.md` + script.
+- **Live seam (credibility):** a real **HAPI FHIR R5** server on AWS (ECS Fargate
+  or EC2; `hapiproject/hapi`) **pre-loaded with the APIX + PQI IG packages**, CORS
+  enabled — so the same UI flips `mock → hapi` and runs against real infrastructure.
+  Ship `deploy/hapi-r5/` (compose + task definition + IG-load step). Note: AWS
+  HealthLake is R4-only, so we use HAPI for R5.
+- Posture: rehearse on the mock (stage-safe); keep the live AWS server one toggle
+  away to defeat the "it's fiction" objection on demand.
