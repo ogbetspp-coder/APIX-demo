@@ -8,7 +8,6 @@
  *   'task'         { task, firstTime }                      -> Task created/updated
  *   'notification' { bundle, businessStatus, taskStatus, seq } -> real-time push
  *   'reset'        {}                                       -> cleared
- *   'wire'         { entry... }                             -> legacy wire feed (kept)
  *
  * Creates/updates go to APIX.client (which emits its own richer 'io' events on
  * APIX.client.bus). The status-change Subscription is delivered server-side; we
@@ -35,7 +34,6 @@ APIX.store = {
   bus: new EventTarget(),
   subscriptions: [],
   eventCount: 0,
-  seq: 0,
   token: null,
   task: null,
   submissionInputs: [],
@@ -45,7 +43,6 @@ APIX.store = {
     this.resources = {};
     this.subscriptions = [];
     this.eventCount = 0;
-    this.seq = 0;
     this.token = null;
     this.task = null;
     this.submissionInputs = [];
@@ -82,14 +79,6 @@ APIX.store = {
       });
       self._deliveryWired = true;
     }
-  },
-
-  /* Legacy wire feed (kept for compatibility; app.js does not consume it). */
-  wire: function (dir, method, url, label, resource) {
-    this.seq += 1;
-    this.bus.dispatchEvent(new CustomEvent('wire', {
-      detail: { seq: this.seq, dir: dir, method: method, url: url, label: label, resource: resource, ts: new Date() }
-    }));
   },
 
   /* Cache a resource locally so get() resolves it even before/without a read. */
@@ -203,12 +192,13 @@ APIX.store = {
         valueReference: { reference: 'DocumentReference/' + d.docref.id, display: d.docref.content[0].attachment.title }
       });
     });
-    // Step 4 — Orchestrate with a Task (POST triggers the create-topic)
+    // Step 4 — Orchestrate with a Task (POST creates the variation Task)
     var task = this.buildTask();
     var stored = APIX.client.create(task, { label: 'Orchestrate — Task (Type IB variation, created)' });
     this.task = stored;                 // server-returned Task (with server meta)
     this.put(stored);
-    // create-topic: regulator (owner) is notified -> populate its console
+    // Notify the regulator (owner) -> populate its console. (The status-change
+    // Subscription is registered later, in subscribe(); it drives Act 3.)
     this.bus.dispatchEvent(new CustomEvent('task', { detail: { task: this.task, firstTime: true } }));
     return this.task;
   },

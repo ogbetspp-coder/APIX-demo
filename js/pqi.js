@@ -297,7 +297,6 @@ APIX.pqi = (function () {
 
   /* Regulator-side: machine-check a tested batch against the structured criteria. */
   function validate() {
-    var batch = { ASSAY: 99.2, Dissolution: 88, WaterContent: 0.6, DGP_total: 0.6 };
     return [
       { test: 'Assay', criterion: '95–105% LC', measured: '99.2%', pass: true },
       { test: 'Dissolution', criterion: 'Q ≥ 80% / 30 min', measured: '88%', pass: true },

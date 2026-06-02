@@ -221,6 +221,7 @@
     setTimeout(revealRegulator, 950);
   }
   function revealRegulator() {
+    if (!store.task) return;   // Reset may have fired during the reveal delay.
     el('inbox-empty').hidden = true; el('reg').hidden = false;
     el('reg-docs').innerHTML = '<div class="payload-head">Received documents</div>' + docsHtml(store.task.input);
     updateRegStatus(store.task);
@@ -396,6 +397,7 @@
     el('inbox-empty').hidden = false;
     el('conn').className = 'conn'; el('conn').innerHTML = '<span class="dot"></span> Not connected';
     el('view-exchange').hidden = true; el('view-author').hidden = false;
+    setStepper(1);
     refreshControls();
   }
 
