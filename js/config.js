@@ -6,6 +6,8 @@
  *   hapiBase  base URL used when backend === 'hapi'.
  *   latencyMs artificial delay hook for the mock adapter (0 = synchronous; the
  *             scripted demo runs at 0 so everything stays deterministic).
+ *   pollMs    delay before the live read-back of the Task after a regulator PUT
+ *             (real-time is honestly simulated as a poll/read-back, not push).
  *
  * The demo ships on 'mock' so it runs fully offline from file://. Flip `backend`
  * to 'hapi' to drive the very same client against a real server.
@@ -15,5 +17,6 @@ window.APIX = window.APIX || {};
 APIX.config = {
   backend: 'mock',
   hapiBase: 'https://hapi.fhir.org/baseR5',
-  latencyMs: 0
+  latencyMs: 0,
+  pollMs: 1500
 };

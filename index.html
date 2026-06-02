@@ -20,9 +20,19 @@
       <li data-act="2"><span class="num">2</span><span class="lbl">Send it</span><small>APIX</small></li>
       <li data-act="3"><span class="num">3</span><span class="lbl">Review &amp; track</span><small>feedback loop</small></li>
     </ol>
-    <button class="io-toggle" id="io-toggle" aria-expanded="false">
-      <span class="io-toggle-ic">⇄</span> API calls <span class="io-count" id="io-count">0</span>
-    </button>
+    <div class="header-tools">
+      <div class="backend" id="backend-toggle" role="group" aria-label="Backend" aria-pressed="false">
+        <span class="backend-label">Backend</span>
+        <button class="backend-opt on" id="backend-mock">Mock</button>
+        <button class="backend-opt" id="backend-live">Live · HAPI R5</button>
+      </div>
+      <span class="live-indicator" id="live-indicator" hidden>● LIVE · hapi.fhir.org/baseR5 <small>shared/auto-wiped</small></span>
+      <button class="tool-btn" id="about-btn" title="Real vs Simulated">Real vs Simulated</button>
+      <a class="tool-btn" id="conformance-link" href="VALIDATION.md" target="_blank" rel="noopener" title="Conformance: official HL7 validator">Conformance ↗</a>
+      <button class="io-toggle" id="io-toggle" aria-expanded="false">
+        <span class="io-toggle-ic">⇄</span> API calls <span class="io-count" id="io-count">0</span>
+      </button>
+    </div>
   </header>
 
   <main class="stage">

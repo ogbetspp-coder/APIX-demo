@@ -36,8 +36,22 @@ APIX.store = {
   eventCount: 0,
   token: null,
   task: null,
+  taskUrl: null,          // public URL of the server-created Task (live mode)
   submissionInputs: [],
   _deliveryWired: false,
+
+  _isLive: function () { return !!(APIX.config && APIX.config.backend === 'hapi'); },
+
+  /* Convert a Task's references to display-only so a live POST to a server that
+   * enforces referential integrity (HAPI) succeeds without pre-creating every
+   * referenced resource. Still valid R5: Reference.display alone is permitted. */
+  _flattenRefs: function (task) {
+    function flat(r) { if (r && r.reference) { r.display = r.display || r.reference.split('/').pop(); delete r.reference; } }
+    flat(task.focus); flat(task.requester); flat(task.owner);
+    (task.input || []).forEach(function (i) { flat(i.valueReference); });
+    (task.output || []).forEach(function (o) { flat(o.valueReference); });
+    return task;
+  },
 
   reset: function () {
     this.resources = {};
@@ -45,6 +59,7 @@ APIX.store = {
     this.eventCount = 0;
     this.token = null;
     this.task = null;
+    this.taskUrl = null;
     this.submissionInputs = [];
     // Fresh server state so a re-run starts clean.
     if (APIX.MockFhirServer) {
@@ -88,17 +103,32 @@ APIX.store = {
     return resource;
   },
 
-  /* Read a resource: prefer the live server, fall back to the local cache. */
+  /* Read a resource synchronously: prefer the in-memory mock server, fall back
+   * to the local cache. (Used by the UI for cached/mock lookups; the live read-
+   * back path is getAsync().) */
   get: function (ref) {
-    if (APIX.server && typeof ref === 'string' && ref.indexOf('/') > 0) {
+    if (!this._isLive() && APIX.server && typeof ref === 'string' && ref.indexOf('/') > 0) {
       var resp = APIX.server.request('GET', '/' + ref);
       if (resp && resp.status === 200 && resp.body) { this.resources[ref] = resp.body; return resp.body; }
     }
     return this.resources[ref] || null;
   },
 
+  /* Read a resource, awaiting a real round-trip when live. Resolves to the
+   * server's copy (and refreshes the cache); falls back to the cache. */
+  getAsync: function (ref) {
+    var self = this;
+    if (this._isLive()) {
+      return APIX.client.read(ref).then(function (body) {
+        if (body && body.resourceType) { self.resources[ref] = body; return body; }
+        return self.resources[ref] || null;
+      });
+    }
+    return Promise.resolve(this.get(ref));
+  },
+
   /* ---- APIX Step 1: Connect -------------------------------------------- */
-  connect: function () {
+  connect: async function () {
     this._wireClient();
     // Simulated SMART Backend Services OAuth2 token exchange — surfaced on the
     // 'io' feed for the inspector (no real network; clearly a mock).
@@ -113,8 +143,8 @@ APIX.store = {
                   scope: 'system/Task.cruds system/DocumentReference.cruds system/Binary.cruds system/Subscription.cruds' } });
     }
     // Register applicant Organization + notification Endpoint.
-    this.put(APIX.client.create(APIX.seed.applicant, { label: 'Register Organization (SynthPharma AG)' }));
-    this.put(APIX.client.create(APIX.seed.endpoint, { label: 'Register Endpoint (notification webhook)' }));
+    this.put(await APIX.client.create(APIX.seed.applicant, { label: 'Register Organization (SynthPharma AG)' }));
+    this.put(await APIX.client.create(APIX.seed.endpoint, { label: 'Register Endpoint (notification webhook)' }));
   },
 
   /* ---- Build the dual-format spec + supporting documents --------------- */
@@ -175,28 +205,48 @@ APIX.store = {
   },
 
   /* ---- APIX Steps 2-4: Stream + Describe + Orchestrate ----------------- */
-  submit: function () {
-    var self = this;
+  submit: async function () {
     var docs = this.buildSubmissionDocs();
     this.submissionInputs = [];
 
-    // Step 2 — Stream each file as Binary
-    docs.forEach(function (d) {
-      self.put(APIX.client.create(d.binary, { label: 'Stream document (Binary · ' + d.binary.contentType + ')' }));
-    });
+    // Step 2 — Stream each file as Binary (sequential: each create awaited)
+    for (var b = 0; b < docs.length; b++) {
+      var dB = docs[b];
+      this.put(await APIX.client.create(dB.binary, { label: 'Stream document (Binary · ' + dB.binary.contentType + ')' }));
+    }
     // Step 3 — Describe each with a DocumentReference
-    docs.forEach(function (d) {
-      self.put(APIX.client.create(d.docref, { label: 'Describe — ' + d.docref.content[0].attachment.title }));
-      self.submissionInputs.push({
-        type: { coding: [{ system: APIX.SYS.ctd, code: d.docref.type.coding[0].code, display: d.docref.type.coding[0].display }] },
-        valueReference: { reference: 'DocumentReference/' + d.docref.id, display: d.docref.content[0].attachment.title }
+    for (var k = 0; k < docs.length; k++) {
+      var dD = docs[k];
+      this.put(await APIX.client.create(dD.docref, { label: 'Describe — ' + dD.docref.content[0].attachment.title }));
+      this.submissionInputs.push({
+        type: { coding: [{ system: APIX.SYS.ctd, code: dD.docref.type.coding[0].code, display: dD.docref.type.coding[0].display }] },
+        valueReference: { reference: 'DocumentReference/' + dD.docref.id, display: dD.docref.content[0].attachment.title }
       });
-    });
+    }
     // Step 4 — Orchestrate with a Task (POST creates the variation Task)
     var task = this.buildTask();
-    var stored = APIX.client.create(task, { label: 'Orchestrate — Task (Type IB variation, created)' });
+    // Live: the public HAPI server enforces referential integrity, but our
+    // supporting resources (MPD product-context, regulator Org, the just-created
+    // DocumentReferences under their original ids) are not addressable there by
+    // these local ids. Convert the Task's references to display-only — still
+    // valid R5 (a Reference may carry only .display) — so the create succeeds as
+    // a single, self-contained, real round-trip. Mock keeps full references.
+    if (this._isLive()) this._flattenRefs(task);
+    var stored = await APIX.client.create(task, { label: 'Orchestrate — Task (Type IB variation, created)' });
     this.task = stored;                 // server-returned Task (with server meta)
     this.put(stored);
+
+    // Capture the server-assigned Task id and build its public URL when live, so
+    // a skeptic can open the very Task we just created on a server we don't own.
+    if (this._isLive() && stored && stored.id) {
+      this.taskUrl = APIX.config.hapiBase + '/Task/' + stored.id;
+    }
+
+    // Live: run a REAL $validate so HAPI's OperationOutcome shows in the inspector.
+    if (this._isLive()) {
+      await APIX.client.validate(this.task);
+    }
+
     // Notify the regulator (owner) -> populate its console. (The status-change
     // Subscription is registered later, in subscribe(); it drives Act 3.)
     this.bus.dispatchEvent(new CustomEvent('task', { detail: { task: this.task, firstTime: true } }));
@@ -231,22 +281,26 @@ APIX.store = {
   },
 
   /* ---- APIX Step 5: Subscribe ------------------------------------------ */
-  subscribe: function () {
-    // Register the topic on the server (so the engine can evaluate it) and the
-    // Subscription itself (POSTed through the client → an 'io' entry).
-    if (APIX.server) {
+  subscribe: async function () {
+    // Register the topic on the mock server (so the engine can evaluate it). On
+    // the live server these topics already exist; we only POST the Subscription.
+    if (!this._isLive() && APIX.server) {
       APIX.server.registerTopic(APIX.seed.topicStatus);
       APIX.server.registerTopic(APIX.seed.topicCreate);
     }
     var sub = APIX.seed.subscription;
-    APIX.client.createSubscription(sub);
-    if (APIX.server) APIX.server.registerSubscription(sub);
+    // POST a REAL Subscription so it exists/visible on the server (live mode);
+    // we do NOT rely on server push — the UI reads the Task back after changes
+    // (production = a rest-hook webhook delivery).
+    var stored = await APIX.client.createSubscription(sub);
+    if (stored && stored.resourceType === 'Subscription') sub = stored;
+    if (!this._isLive() && APIX.server) APIX.server.registerSubscription(APIX.seed.subscription);
     this.subscriptions.push(sub);
     this.put(sub);
   },
 
   /* ---- Regulator advances the Task; fires notifications ---------------- */
-  updateTask: function (effect) {
+  updateTask: async function (effect) {
     var self = this;
     this.task.status = effect.status;
     this.task.businessStatus = { coding: [{ system: APIX.SYS.businessStatus, code: effect.businessStatus, display: APIX.display('businessStatus', effect.businessStatus) }] };
@@ -258,22 +312,40 @@ APIX.store = {
     }
     if (effect.addOutputs) {
       this.task.output = this.task.output || [];
-      effect.addOutputs.forEach(function (k) {
-        var o = APIX.OUTPUTS[k];
+      for (var oi = 0; oi < effect.addOutputs.length; oi++) {
+        var o = APIX.OUTPUTS[effect.addOutputs[oi]];
         var dref = self._docref(o.id, o.ctd, 'application/pdf', o.title, 'Binary/binary-' + o.id);
         dref.author = [{ reference: 'Organization/' + APIX.seed.regulator.id }];
-        self.put(APIX.client.create(dref, { label: 'Regulator output — ' + o.title }));
+        self.put(await APIX.client.create(dref, { label: 'Regulator output — ' + o.title }));
         self.task.output.push({ type: { coding: [{ system: APIX.SYS.ctd, code: o.ctd, display: APIX.display('ctd', o.ctd) }] }, valueReference: { reference: 'DocumentReference/' + o.id, display: o.title } });
-      });
+      }
     }
 
     // PUT the updated Task. The server bumps meta.versionId + lastUpdated and,
-    // because status changed, fires the status-change topic → delivers a
+    // (mock) because status changed, fires the status-change topic → delivers a
     // subscription-notification → our delivery listener emits 'notification'.
-    var stored = APIX.client.update(this.task, { label: 'Task → ' + effect.status + ' / ' + APIX.display('businessStatus', effect.businessStatus) });
-    this.task = stored;          // adopt server meta (versionId bumped by server)
-    this.put(stored);
+    // Live: keep newly-added output refs display-only too (referential integrity).
+    if (this._isLive()) this._flattenRefs(this.task);
+    var stored = await APIX.client.update(this.task, { label: 'Task → ' + effect.status + ' / ' + APIX.display('businessStatus', effect.businessStatus) });
+    if (stored && stored.resourceType === 'Task') this.task = stored;   // adopt server meta (versionId bumped by server)
+    this.put(this.task);
     this.bus.dispatchEvent(new CustomEvent('task', { detail: { task: this.task, firstTime: false } }));
+
+    // Live real-time = read-back. The mock server pushes a subscription-
+    // notification in-process; the live server does NOT push to us here (a
+    // production rest-hook webhook would). So in live mode we re-GET the Task
+    // from HAPI — a real round-trip — and drive the SAME 'notification' flow
+    // from the data that genuinely came back off the public server.
+    if (this._isLive()) {
+      var fresh = await this.getAsync('Task/' + this.task.id);
+      if (fresh && fresh.resourceType === 'Task') { this.task = fresh; this.put(fresh); }
+      var bizCode = (this.task.businessStatus && this.task.businessStatus.coding && this.task.businessStatus.coding[0])
+        ? this.task.businessStatus.coding[0].code : effect.businessStatus;
+      var bundle = this.buildNotificationBundle(this.task.status, bizCode);
+      this.bus.dispatchEvent(new CustomEvent('notification', {
+        detail: { bundle: bundle, businessStatus: bizCode, taskStatus: this.task.status, seq: this.eventCount }
+      }));
+    }
   },
 
   /* Build the R5 subscription-notification Bundle (kept for any callers that

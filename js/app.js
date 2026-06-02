@@ -82,27 +82,47 @@
     renderReview();
   }
 
-  function runStep() {
+  var inFlight = false;      // a step handler is awaiting (live latency guard)
+
+  /* Run the current step. Handlers may be async (live mode does real network
+     I/O); we await the handler before advancing `i`, and disable the ▶ button
+     with a brief in-flight state so a fast double-click can't fire two steps
+     under ~350 ms live latency. Mock stays effectively instant. */
+  async function runStep() {
+    if (inFlight) return;
     var step = S[i];
     if (!step) return;
     var act = actOf(step);
     showView(act); setStepper(act);
     if (act === 3) el('review').hidden = false;
 
-    switch (step.effect.type) {
-      case 'pull': handlePull(); break;
-      case 'normalize': handleNormalize(); break;
-      case 'render': handleConsolidate(); break;
-      case 'connect': handleConnect(); break;
-      case 'submit': handleSubmit(); break;
-      case 'subscribe': handleSubscribe(); break;
-      case 'updateTask':
-        if (step.effect.flexibility) el('reg-flex').hidden = false;
-        store.updateTask(step.effect);
-        reviewDone[step.key] = true;
-        break;
+    inFlight = true;
+    var btn = el('stepbtn');
+    btn.disabled = true;
+    btn.classList.add('busy');
+
+    try {
+      switch (step.effect.type) {
+        case 'pull': handlePull(); break;
+        case 'normalize': handleNormalize(); break;
+        case 'render': handleConsolidate(); break;
+        case 'connect': await handleConnect(); break;
+        case 'submit': await handleSubmit(); break;
+        case 'subscribe': await handleSubscribe(); break;
+        case 'updateTask':
+          if (step.effect.flexibility) el('reg-flex').hidden = false;
+          await store.updateTask(step.effect);
+          reviewDone[step.key] = true;
+          break;
+      }
+      i += 1;
+    } catch (e) {
+      el('narration').innerHTML = '⚠️ <strong>Step failed:</strong> ' + esc(e && e.message ? e.message : String(e)) +
+        (store._isLive ? ' — the public HAPI server may be busy; retry, or switch back to Mock.' : '');
+    } finally {
+      inFlight = false;
+      btn.classList.remove('busy');
     }
-    i += 1;
     refreshControls();
   }
   function show(id) { el(id).hidden = false; }
@@ -204,18 +224,23 @@
         '<button class="peek" data-peek="' + inp.valueReference.reference + '">View</button></div>';
     }).join('');
   }
-  function handleConnect() {
-    store.connect();
+  async function handleConnect() {
+    await store.connect();
     el('conn').className = 'conn connected';
     el('conn').innerHTML = '<span class="dot"></span> Connected · Bearer token · Organization + Endpoint registered';
     markApix('Connect');
   }
-  function handleSubmit() {
-    store.submit();
+  /* Live: a clickable link to the real Task on the public server we don't own. */
+  function verifyLinkHtml() {
+    if (!store.taskUrl) return '';
+    return '<a class="verify-link" href="' + esc(store.taskUrl) + '" target="_blank" rel="noopener">View on public server ↗</a>';
+  }
+  async function handleSubmit() {
+    await store.submit();
     var t = store.task;
     el('pkg').hidden = false;
     el('pkg').innerHTML = '<div class="pkg-head">Submission package · ' + t.input.length +
-      ' documents <button class="peek" data-peek="Task">View Task { }</button></div>' + docsHtml(t.input);
+      ' documents <button class="peek" data-peek="Task">View Task { }</button> ' + verifyLinkHtml() + '</div>' + docsHtml(t.input);
     markApix('Stream'); markApix('Describe'); markApix('Orchestrate');
     flyChip('📦 ' + t.input.length + ' documents →', 'right');
     setTimeout(revealRegulator, 950);
@@ -226,10 +251,16 @@
     el('reg-docs').innerHTML = '<div class="payload-head">Received documents</div>' + docsHtml(store.task.input);
     updateRegStatus(store.task);
   }
-  function handleSubscribe() {
-    store.subscribe();
+  async function handleSubscribe() {
+    await store.subscribe();
     markApix('Subscribe');
     el('loopnote').hidden = false;
+    if (store._isLive()) {
+      el('loopnote').innerHTML = '🔁 <strong>FHIR Subscription</strong> registered on the server.<br>' +
+        '<span class="live-note">UI reads the Task back after each change (production = a rest-hook webhook push).</span>';
+    } else {
+      el('loopnote').innerHTML = '🔁 <strong>FHIR Subscription</strong><br>Every status change is pushed back automatically — no polling, no email.';
+    }
     el('tracker').hidden = false;
     renderTracker('submitted');
   }
@@ -324,6 +355,7 @@
         '<div class="io-sec">Response</div>' +
         '<div class="io-line"><span class="io-k">' + esc(String(st.status || '')) + '</span> ' + esc(st.statusText || '') + '</div>' +
         ioHeaderRows(st.headers) + ioBody(st.body) +
+        ((store.taskUrl && /Orchestrate/.test(e.label || '')) ? '<div class="io-verify">' + verifyLinkHtml() + '</div>' : '') +
       '</div>' +
     '</div>';
   }
@@ -368,8 +400,9 @@
   /* ---- store events ----------------------------------------------------- */
   store.bus.addEventListener('task', function (ev) {
     if (ev.detail.firstTime) {
-      convLine('out', '🏭 SynthPharma', '🏛️ Health Authority',
-        'Submitted Type IB variation (Task created)', 'Task');
+      var msg = 'Submitted Type IB variation (Task created)' +
+        (store.taskUrl ? ' ' + verifyLinkHtml() : '');
+      convLine('out', '🏭 SynthPharma', '🏛️ Health Authority', msg, 'Task');
     } else if (!el('reg').hidden) {
       updateRegStatus(ev.detail.task);
     }
@@ -401,6 +434,37 @@
     refreshControls();
   }
 
+  /* ---- backend toggle (Mock ⇄ Live) ------------------------------------- */
+  function isLive() { return APIX.config && APIX.config.backend === 'hapi'; }
+  function reflectBackend() {
+    var live = isLive();
+    el('backend-toggle').setAttribute('aria-pressed', live ? 'true' : 'false');
+    el('backend-toggle').classList.toggle('live', live);
+    el('backend-mock').classList.toggle('on', !live);
+    el('backend-live').classList.toggle('on', live);
+    el('live-indicator').hidden = !live;
+  }
+  function setBackend(backend) {
+    if (!APIX.config) return;
+    if (APIX.config.backend === backend) return;
+    APIX.config.backend = backend;
+    reflectBackend();
+    resetAll();   // changing backend resets the run (fresh ids / server state)
+  }
+
+  var ABOUT_HTML =
+    '<h2 class="modal-title">Real vs Simulated</h2>' +
+    '<p class="muted">This demo is built on real, valid FHIR R5 — and you can verify it independently.</p>' +
+    '<table class="val-table about-table"><thead><tr><th>Aspect</th><th>Status</th></tr></thead><tbody>' +
+    '<tr><td>FHIR R5 resources (Task, DocumentReference, Binary, Subscription, PQI Bundle)</td><td class="pass">✓ Real &amp; conformant</td></tr>' +
+    '<tr><td>Conformance to the APIX + PQI IGs</td><td class="pass">✓ Official HL7 validator (88 → 1 documented IG bug)</td></tr>' +
+    '<tr><td><strong>Live</strong> mode: POST / GET / $validate over the wire</td><td class="pass">✓ Real, against public hapi.fhir.org/baseR5</td></tr>' +
+    '<tr><td>Server-assigned ids, ETags, OperationOutcome</td><td class="pass">✓ Real (from the public server)</td></tr>' +
+    '<tr><td>OAuth2 / SMART Backend Services token</td><td class="sim">◐ Simulated (labeled; orthogonal to the exchange)</td></tr>' +
+    '<tr><td>Real-time push delivery</td><td class="sim">◐ Subscription is real; here the UI reads the Task back (production = rest-hook webhook)</td></tr>' +
+    '</tbody></table>' +
+    '<p class="muted">Mock mode is the stage default: fully offline, deterministic, instant. Live mode talks to a shared public server whose data is periodically auto-wiped.</p>';
+
   /* ---- wiring ----------------------------------------------------------- */
   document.addEventListener('click', function (ev) {
     var sum = ev.target.closest('.io-sum');
@@ -415,7 +479,11 @@
   el('resetbtn').addEventListener('click', resetAll);
   el('modal-close').addEventListener('click', function () { el('modal').hidden = true; });
   el('modal').addEventListener('click', function (ev) { if (ev.target === el('modal')) el('modal').hidden = true; });
+  el('backend-mock').addEventListener('click', function () { setBackend('mock'); });
+  el('backend-live').addEventListener('click', function () { setBackend('hapi'); });
+  el('about-btn').addEventListener('click', function () { openModal(ABOUT_HTML); });
 
+  reflectBackend();
   setStepper(1);
   refreshControls();
 })();

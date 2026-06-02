@@ -27,10 +27,14 @@ w('Endpoint', APIX.seed.endpoint);
 w('SubscriptionTopic', APIX.seed.topicStatus);
 w('Subscription', APIX.seed.subscription);
 
-APIX.store.connect();
-APIX.store.submit();
-APIX.store.subscribe();
-w('Task', APIX.store.task);
-w('DocumentReference', APIX.store.get('DocumentReference/docref-spec-fhir'));
+// The store's connect/submit/subscribe are now async (uniform with live mode);
+// await the flow before reading the server-returned Task back out.
+(async function () {
+  await APIX.store.connect();
+  await APIX.store.submit();
+  await APIX.store.subscribe();
+  w('Task', APIX.store.task);
+  w('DocumentReference', APIX.store.get('DocumentReference/docref-spec-fhir'));
 
-console.log('Exported ' + fs.readdirSync(OUT).length + ' resources to ' + OUT);
+  console.log('Exported ' + fs.readdirSync(OUT).length + ' resources to ' + OUT);
+})().catch(function (e) { console.error(e); process.exit(1); });

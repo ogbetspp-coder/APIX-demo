@@ -8,8 +8,11 @@
  *   'mock' → APIX.server.request(...) (synchronous, in-memory; the demo default)
  *   'hapi' → fetch(APIX.config.hapiBase + url, ...) (real; async, optional)
  *
- * Every method returns the response BODY (the resource / Bundle / Parameters)
- * for convenience; the full { request, response } pair rides on the 'io' event.
+ * Every method returns a PROMISE that resolves to the response BODY (the
+ * resource / Bundle / Parameters); the full { request, response } pair rides on
+ * the 'io' event. The mock adapter is synchronous under the hood, but its result
+ * is wrapped in Promise.resolve(...) so the surface is UNIFORMLY async — the
+ * same store/app code drives both the mock and the real (fetch) HAPI backend.
  *
  *   'io' detail = {
  *     id,        // incrementing int, unique per interaction
@@ -62,14 +65,14 @@ APIX.FhirClient = function () {
   };
 
   /* ---- the dispatch core ----------------------------------------------- */
-  // Build → dispatch → emit 'io' → return response body. Synchronous on mock;
-  // if an adapter returns a Promise (hapi), resolve to the body and emit then.
+  // Build → dispatch → emit 'io' → resolve to response body. ALWAYS returns a
+  // Promise: the mock adapter's synchronous result is wrapped in Promise.resolve
+  // so callers can uniformly `await` every method regardless of backend.
   proto._dispatch = function (request, label) {
     var self = this;
     request.headers = request.headers || defaultHeaders(request.body);
     var id = (this._seq += 1);
     var adapter = this._adapter();
-    var response = adapter.call(this, request);
 
     function emit(resp) {
       self.bus.dispatchEvent(new CustomEvent('io', {
@@ -78,11 +81,11 @@ APIX.FhirClient = function () {
       return resp;
     }
 
-    if (response && typeof response.then === 'function') {
-      return response.then(emit).then(function (resp) { return resp.body; });
-    }
-    emit(response);
-    return response.body;
+    // Normalise the adapter result (sync object or Promise) to a Promise, then
+    // emit the matched 'io' pair and resolve to the response body.
+    return Promise.resolve(adapter.call(this, request))
+      .then(emit)
+      .then(function (resp) { return resp.body; });
   };
 
   // Surface an externally-produced interaction (e.g. an inbound subscription

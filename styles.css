@@ -58,6 +58,41 @@ h1, h2, h3 { margin: 0; }
 .io-count { min-width: 20px; text-align: center; font-family: ui-monospace, monospace; font-size: 11px; font-weight: 700;
   color: #fff; background: var(--accent); border-radius: 20px; padding: 1px 7px; }
 
+/* ---------- backend toggle + live indicator + tools ---------- */
+.header-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.backend { display: inline-flex; align-items: center; gap: 4px; background: #fbfdff; border: 1px solid var(--line);
+  border-radius: 10px; padding: 4px; }
+.backend-label { font-size: 10.5px; font-weight: 800; letter-spacing: .4px; text-transform: uppercase;
+  color: var(--dim); padding: 0 6px 0 4px; }
+.backend-opt { font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer; color: var(--dim);
+  background: transparent; border: 1px solid transparent; border-radius: 7px; padding: 5px 10px; white-space: nowrap; }
+.backend-opt:hover { color: var(--ink); }
+.backend-opt.on { color: var(--accent-d); background: #eafaf8; border-color: #a9e2df; }
+.backend.live #backend-live.on { color: #fff; background: var(--red); border-color: var(--red); }
+.live-indicator { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 800;
+  color: var(--red); background: #fdecec; border: 1px solid #f3bcbc; border-radius: 20px; padding: 4px 11px;
+  white-space: nowrap; animation: livePulse 2s ease-in-out infinite; }
+.live-indicator small { font-weight: 600; color: #b35a56; }
+@keyframes livePulse { 0%,100% { box-shadow: 0 0 0 0 rgba(212,80,75,.0); } 50% { box-shadow: 0 0 0 3px rgba(212,80,75,.14); } }
+.tool-btn { display: inline-flex; align-items: center; cursor: pointer; font-family: inherit; text-decoration: none;
+  font-size: 12px; font-weight: 650; color: var(--dim); background: #fbfdff; border: 1px solid var(--line);
+  border-radius: 10px; padding: 8px 11px; white-space: nowrap; }
+.tool-btn:hover { color: var(--accent-d); border-color: var(--accent); }
+
+/* in-flight ▶ button while a step awaits a real round-trip */
+.btn-primary.busy { opacity: .65; cursor: progress; }
+.btn-primary.busy::after { content: '…'; }
+
+/* "View on public server" verify link */
+.verify-link { display: inline-flex; align-items: center; font-size: 11.5px; font-weight: 800; text-decoration: none;
+  color: #fff; background: var(--red); border-radius: 7px; padding: 2px 9px; margin-left: 6px; white-space: nowrap; }
+.verify-link:hover { background: #bf403c; }
+.io-verify { margin-top: 8px; }
+.conv-msg .verify-link { margin-left: 8px; }
+.live-note { color: var(--amber); font-weight: 600; }
+.about-table td { vertical-align: top; }
+.val-table .sim { color: var(--amber); font-weight: 700; }
+
 /* ---------- stage / views ---------- */
 .stage { flex: 1; overflow: auto; padding: 22px 26px; min-height: 0; }
 .view { max-width: 1280px; margin: 0 auto; animation: fade .35s ease; }
