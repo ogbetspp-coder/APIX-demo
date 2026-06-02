@@ -4,6 +4,15 @@
  */
 window.APIX = window.APIX || {};
 
+/* Real lowercase RFC-4122 v4 UUID (no external deps; works in browser + Node). */
+APIX.uuid = function () {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) { return crypto.randomUUID(); }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+    var r = (Math.random() * 16) | 0, v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+};
+
 APIX.SYS = {
   canonical: 'http://hl7.org/fhir/uv/apix',
   taskCode: 'http://hl7.org/fhir/uv/apix/CodeSystem/apix-task-code',
@@ -13,8 +22,12 @@ APIX.SYS = {
   channelType: 'http://terminology.hl7.org/CodeSystem/subscription-channel-type',
   topicStatus: 'http://hl7.org/fhir/uv/example/SubscriptionTopic/TaskStatusChangeWithIdentifierFilter',
   topicCreate: 'http://hl7.org/fhir/uv/example/SubscriptionTopic/TaskCreationWithOrganizationAssignedFilter',
-  taskIdSystem: 'http://example.org/health-authority/task-id',
-  procedureSystem: 'http://example.org/health-authority/procedure-number',
+  // Non-example systems (the validator rejects example.org/.example URLs on these slices).
+  taskIdSystem: 'urn:ietf:rfc:3986',
+  procedureSystem: 'https://spor.ema.europa.eu/v1/procedures',
+  groupIdSystem: 'https://spor.ema.europa.eu/v1/workflow-group',
+  docRefIdSystem: 'https://synthpharma.example/fhir/document-set-id',
+  docVerSystem: 'https://synthpharma.example/fhir/document-version',
   profile: {
     task: 'http://hl7.org/fhir/uv/apix/StructureDefinition/apix-task',
     org: 'http://hl7.org/fhir/uv/apix/StructureDefinition/apix-organization',
@@ -47,26 +60,27 @@ APIX.CS = {
     'approved': 'Approved',
     'rejected': 'Rejected'
   },
-  // Task.identifier.type — apix-demo
+  // Task.identifier.type / DocumentReference.identifier.type — apix-demo
   idType: {
     'apixtaskinstance': 'APIX Task Instance ID',
-    'apixregulatorprocedureno': 'APIX Regulator Procedure Number'
+    'apixregulatorprocedureno': 'APIX Regulator Procedure Number',
+    'docsetid': 'Document Set Identifier',
+    'docverid': 'Document Version Number Identifier'
   },
-  // eCTD module / section codes — ctd-section
+  // eCTD module / section codes — ctd-section (displays MUST match the IG CodeSystem exactly)
   ctd: {
     '1.0': 'Cover Letter',
     'application-form': 'Application Form',
-    'variation-application': 'Variation Application Form',
-    '3.2.P.5.1': 'Specification - Drug Product',
-    '3.2.P.5.4': 'Batch Analyses',
-    '3.2.P.5.6': 'Justification of Specification',
-    '3.2.P.8.1': 'Stability Summary',
+    '3.2.P.5.1': 'Specification(s)',
+    '3.2.P.5.6': 'Justification of Specification(s)',
+    '3.2.P.8.1': 'Stability Summary and Conclusion',
+    '3.2.P.8.3': 'Stability Data',
     'acknowledgement-receipt': 'Acknowledgement of Receipt',
     'validation-report': 'Validation Report',
     'approval-letter': 'Approval Letter',
     'assessment-report': 'Assessment Report',
     'm1': 'Module 1',
-    'm3': 'Module 3 - Quality'
+    'm3': 'Module 3'
   }
 };
 

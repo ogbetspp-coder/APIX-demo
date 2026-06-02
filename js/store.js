@@ -109,19 +109,31 @@ APIX.store = {
   },
 
   _docref: function (id, ctd, contentType, title, url, size) {
+    var now = new Date().toISOString();
     return {
       resourceType: 'DocumentReference',
       id: id,
       meta: { profile: [APIX.SYS.profile.docref] },
+      // apix-documentreference requires exactly two identifiers: a document-set id and a version id.
+      identifier: [
+        // NB: display values below are the slice patterns from apix-documentreference (the
+        // `value` discriminator on type requires them verbatim to match the slice). The
+        // docverid pattern display ("Document Version Identifier") differs from the
+        // apix-demo CodeSystem display ("Document Version Number Identifier") — an upstream
+        // IG inconsistency; matching the slice pattern is preferred so the structure is valid.
+        { use: 'official', type: { coding: [{ system: APIX.SYS.idType, code: 'docsetid', display: 'Document Set Identifier' }] }, system: APIX.SYS.docRefIdSystem, value: 'urn:uuid:' + APIX.uuid() },
+        { use: 'official', type: { coding: [{ system: APIX.SYS.idType, code: 'docverid', display: 'Document Version Identifier' }] }, system: APIX.SYS.docVerSystem, value: 'urn:uuid:' + APIX.uuid() }
+      ],
       version: '2.0',
       status: 'current',
       docStatus: 'final',
       type: { coding: [{ system: APIX.SYS.ctd, code: ctd, display: APIX.display('ctd', ctd) }] },
-      category: [{ coding: [{ system: APIX.SYS.ctd, code: 'm3', display: 'Module 3 - Quality' }] }],
+      category: [{ coding: [{ system: APIX.SYS.ctd, code: 'm3', display: 'Module 3' }] }],
       subject: { reference: 'MedicinalProductDefinition/' + APIX.seed.product.id },
       author: [{ reference: 'Organization/' + APIX.seed.applicant.id }],
-      date: new Date().toISOString(),
-      content: [{ attachment: { contentType: contentType, url: url, title: title, size: size || 256000 } }]
+      date: now,
+      // size is FHIR integer64 → must be serialised as a JSON string.
+      content: [{ attachment: { contentType: contentType, url: url, title: title, size: String(size || 256000), creation: now } }]
     };
   },
 
@@ -150,20 +162,26 @@ APIX.store = {
   },
 
   buildTask: function () {
+    var now = new Date().toISOString();
     return {
       resourceType: 'Task',
       id: APIX.TASK_ID,
-      meta: { profile: [APIX.SYS.profile.task] },
+      meta: { versionId: '1', lastUpdated: now, profile: [APIX.SYS.profile.task] },
+      text: {
+        status: 'generated',
+        div: '<div xmlns="http://www.w3.org/1999/xhtml">Type IB variation (B.II.d.1): tightening of the end-of-shelf-life Water Content limit for ' +
+          APIX.seed.product.name[0].productName + '.</div>'
+      },
       identifier: [{ use: 'official', type: { coding: [{ system: APIX.SYS.idType, code: 'apixtaskinstance', display: 'APIX Task Instance ID' }] }, system: APIX.SYS.taskIdSystem, value: APIX.TASK_UUID }],
+      groupIdentifier: { use: 'official', system: APIX.SYS.groupIdSystem, value: APIX.TASK_GROUP_UUID },
       status: 'requested',
       businessStatus: { coding: [{ system: APIX.SYS.businessStatus, code: 'submitted', display: 'Submitted' }] },
       intent: 'proposal',
       priority: 'routine',
       code: { coding: [{ system: APIX.SYS.taskCode, code: 'variation-type-ib', display: 'Type IB Variation' }] },
-      description: 'Type IB variation (B.II.d.1): tightening of end-of-shelf-life Water Content limit for ' + APIX.seed.product.name[0].productName,
       focus: { reference: 'MedicinalProductDefinition/' + APIX.seed.product.id, display: APIX.seed.product.name[0].productName },
-      authoredOn: new Date().toISOString(),
-      lastModified: new Date().toISOString(),
+      authoredOn: now,
+      lastModified: now,
       requester: { reference: 'Organization/' + APIX.seed.applicant.id, display: 'SynthPharma AG' },
       owner: { reference: 'Organization/' + APIX.seed.regulator.id, display: 'Health Authority' },
       input: this.submissionInputs
@@ -184,7 +202,12 @@ APIX.store = {
     var prevStatus = this.task.status;
     this.task.status = effect.status;
     this.task.businessStatus = { coding: [{ system: APIX.SYS.businessStatus, code: effect.businessStatus, display: APIX.display('businessStatus', effect.businessStatus) }] };
-    this.task.lastModified = new Date().toISOString();
+    var nowIso = new Date().toISOString();
+    this.task.lastModified = nowIso;
+    // Simulate server-side versioning: bump meta.versionId + lastUpdated on every PUT.
+    this.task.meta = this.task.meta || {};
+    this.task.meta.versionId = String((parseInt(this.task.meta.versionId, 10) || 1) + 1);
+    this.task.meta.lastUpdated = nowIso;
 
     if (effect.addProcedureNo) {
       this.task.identifier.push({ use: 'official', type: { coding: [{ system: APIX.SYS.idType, code: 'apixregulatorprocedureno', display: 'APIX Regulator Procedure Number' }] }, system: APIX.SYS.procedureSystem, value: 'PROC-2026-04210' });
@@ -196,7 +219,7 @@ APIX.store = {
         var dref = self._docref(o.id, o.ctd, 'application/pdf', o.title, 'Binary/binary-' + o.id);
         dref.author = [{ reference: 'Organization/' + APIX.seed.regulator.id }];
         self.put(dref, 'reg', 'DocumentReference — ' + o.title + ' (regulator output)');
-        self.task.output.push({ type: { coding: [{ system: APIX.SYS.ctd, code: o.ctd, display: o.title }] }, valueReference: { reference: 'DocumentReference/' + o.id, display: o.title } });
+        self.task.output.push({ type: { coding: [{ system: APIX.SYS.ctd, code: o.ctd, display: APIX.display('ctd', o.ctd) }] }, valueReference: { reference: 'DocumentReference/' + o.id, display: o.title } });
       });
     }
 

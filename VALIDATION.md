@@ -15,9 +15,28 @@ Requires Java 11+ and network access. It exports the demo's resources and runs t
 
 Target: **0 errors** (warnings triaged and justified).
 
-## Status — validator-derived punch-list (closing in v2)
-A baseline run loads both IGs (APIX = 4,248 resources; PQI v1.0.0) and pinpoints the
-exact gaps we are fixing. Recorded here so progress is auditable.
+## Result (latest run)
+**88 → 1 error.** 7 of 8 resource types validate with **0 errors** (SubscriptionTopic,
+MedicinalProductDefinition, Subscription, Organization, Endpoint, Task, and the PQI
+Bundle). The single residual is a **contradiction inside the APIX 0.1.0 draft IG
+itself** — not a defect in the demo:
+
+> `DocumentReference.identifier[docVersionNumberIdentifier].type.coding.display` —
+> the `apix-documentreference` profile slices `identifier` with a *value*
+> discriminator on `type`, and that slice's pattern hard-codes the display
+> "Document Version Identifier", which contradicts the only display the `apix-demo`
+> CodeSystem defines for the code ("Document Version Number Identifier"). No
+> instance can satisfy both the structural slice and the terminology check
+> simultaneously (confirmed identically against `tx.fhir.org`). We keep profile
+> conformance (the structural slice is valid) and flag the display — a fix to raise
+> upstream with the APIX work group.
+
+Remaining non-error notes are benign and terminology-server-dependent (EDQM Standard
+Terms, `dom-6` narrative best-practice, draft-CodeSystem info).
+
+## What we fixed (validator-derived)
+A baseline run loaded both IGs (APIX = 4,248 resources; PQI v1.0.0) and pinpointed
+the exact gaps — now closed:
 
 **PQI Bundle** (`Bundle-drug-product-specification-pq`)
 - Use real lowercase UUIDs for `fullUrl`; http canonicals for `url` / `definitionCanonical`.
@@ -43,4 +62,4 @@ exact gaps we are fixing. Recorded here so progress is auditable.
 - `group.element.target.relationship` (R5; not R4 `equivalence`); `$translate`
   returns a `Parameters` with `result` + `match.relationship` + `match.concept`.
 
-All of the above are driven to zero as part of the v2 build.
+All of the above are now resolved (see **Result** above).

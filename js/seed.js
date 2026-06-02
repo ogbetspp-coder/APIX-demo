@@ -11,6 +11,12 @@
  */
 window.APIX = window.APIX || {};
 
+/* The stable Task identity used throughout the storyline (real urn:uuid values). */
+APIX.TASK_ID = 'task-velexa-variation';
+APIX.TASK_UUID = 'urn:uuid:2c9f3a10-9b1e-47a6-8d3c-ca60a5189726';
+/* Workflow group id (Task.groupIdentifier) — also a real urn:uuid. */
+APIX.TASK_GROUP_UUID = 'urn:uuid:7f3b9d2a-1c84-4e57-bf90-0a1b2c3d4e5f';
+
 APIX.seed = {
 
   /* ---- Organizations ---------------------------------------------------- */
@@ -20,13 +26,14 @@ APIX.seed = {
     meta: { profile: [APIX.SYS.profile.org] },
     identifier: [{ use: 'official', system: 'https://spor.ema.europa.eu/v1/locations', value: 'LOC-100012345' }],
     active: true,
-    type: [{ coding: [{ system: 'http://terminology.hl7.org/CodeSystem/organization-type', code: 'other', display: 'Marketing Authorisation Holder' }] }],
+    type: [{ coding: [{ system: 'http://terminology.hl7.org/CodeSystem/organization-type', code: 'other', display: 'Other' }], text: 'Marketing Authorisation Holder' }],
     name: 'SynthPharma AG',
     contact: [{
-      name: { text: 'Dr. John Doe, Head of Regulatory Affairs' },
+      name: [{ text: 'Dr. John Doe, Head of Regulatory Affairs' }],
       telecom: [{ system: 'email', value: 'john.doe@synthpharma.example', use: 'work' }],
       address: { line: ['123 Synthetic Research Blvd'], city: 'Basel', postalCode: '4000', country: 'Switzerland' }
-    }]
+    }],
+    endpoint: [{ reference: 'Endpoint/endpoint-synthpharma' }]
   },
 
   regulator: {
@@ -35,7 +42,7 @@ APIX.seed = {
     name: 'Health Authority – Regulatory Review Division',
     active: true,
     contact: [{
-      name: { text: 'Scientific and Regulatory Management' },
+      name: [{ text: 'Scientific and Regulatory Management' }],
       telecom: [{ system: 'email', value: 'regulatory@health-authority.example', use: 'work' }],
       address: { type: 'physical', city: 'Capital City', postalCode: '1083 HS', country: 'Country' }
     }]
@@ -49,7 +56,10 @@ APIX.seed = {
     connectionType: [{ coding: [{ system: 'http://terminology.hl7.org/CodeSystem/endpoint-connection-type', code: 'hl7-fhir-rest' }] }],
     name: 'SynthPharma APIX notification endpoint',
     managingOrganization: { reference: 'Organization/org-synthpharma-ag' },
-    payloadType: [{ coding: [{ system: 'http://terminology.hl7.org/CodeSystem/endpoint-payload-type', code: 'any' }] }],
+    payload: [{
+      type: [{ coding: [{ system: 'http://terminology.hl7.org/CodeSystem/endpoint-payload-type', code: 'any', display: 'Any' }] }],
+      mimeType: ['application/fhir+json']
+    }],
     address: 'https://portal.synthpharma.example/fhir-subscription-notify'
   },
 
@@ -58,25 +68,24 @@ APIX.seed = {
     resourceType: 'MedicinalProductDefinition',
     id: 'mpd-velexa175',
     identifier: [{ system: 'http://ema.europa.eu/fhir/mpid', value: 'MPID-EU-100000067890' }],
-    type: { coding: [{ system: 'http://terminology.hl7.org/CodeSystem/medicinal-product-type', code: 'MedicinalProduct' }] },
-    domain: { coding: [{ system: 'http://hl7.org/fhir/medicinal-product-domain', code: 'Human', display: 'Human use' }] },
-    status: { coding: [{ system: 'http://hl7.org/fhir/publication-status', code: 'active' }] },
+    description: 'Velexa 175 mg film-coated tablets — finished medicinal product (demo product context).',
     combinedPharmaceuticalDoseForm: { coding: [{ system: 'http://standardterms.edqm.eu', code: '10221000', display: 'Film-coated tablet' }] },
     route: [{ coding: [{ system: 'http://standardterms.edqm.eu', code: '20053000', display: 'Oral use' }] }],
     name: [{
       productName: 'Velexa 175 mg film-coated tablets',
-      type: { coding: [{ system: 'http://hl7.org/fhir/CodeSystem/medicinal-product-name-type', code: 'ProprietaryName' }] }
+      type: { coding: [{ system: 'http://hl7.org/fhir/uv/pharm-quality/CodeSystem/cs-productNameType-pq-example', code: 'Proprietary', display: 'Proprietary' }] },
+      part: [{ part: '175 mg', type: { coding: [{ system: 'http://hl7.org/fhir/medicinal-product-name-part-type', code: 'StrengthPart', display: 'Strength part' }] } }]
     }]
   },
 
   /* ---- Mocked supporting documents (the rest of the variation package) -- */
   /* Built into Binary + DocumentReference at submit time (see js/store.js).  */
   supportingDocs: [
-    { id: 'doc-cover',     ctd: '1.0',                   title: 'Cover Letter.pdf',                  size: 184000 },
-    { id: 'doc-varform',   ctd: 'variation-application', title: 'Variation Application Form.pdf',    size: 262000 },
-    { id: 'doc-justif',    ctd: '3.2.P.5.6',             title: 'Justification of Specification.pdf', size: 540000 },
-    { id: 'doc-batch',     ctd: '3.2.P.5.4',             title: 'Batch Analyses.pdf',                size: 1230000 },
-    { id: 'doc-stability', ctd: '3.2.P.8.1',             title: 'Stability Summary (36 months).pdf', size: 2100000 }
+    { id: 'doc-cover',     ctd: '1.0',              title: 'Cover Letter.pdf',                  size: 184000 },
+    { id: 'doc-varform',   ctd: 'application-form', title: 'Variation Application Form.pdf',    size: 262000 },
+    { id: 'doc-justif',    ctd: '3.2.P.5.6',        title: 'Justification of Specification.pdf', size: 540000 },
+    { id: 'doc-batch',     ctd: '3.2.P.8.3',        title: 'Batch / Stability Data.pdf',        size: 1230000 },
+    { id: 'doc-stability', ctd: '3.2.P.8.1',        title: 'Stability Summary (36 months).pdf', size: 2100000 }
   ],
 
   /* ---- Real-time layer: SubscriptionTopic x2 + Subscription ------------- */
@@ -115,7 +124,7 @@ APIX.seed = {
     topic: APIX.SYS.topicStatus,
     managingEntity: { reference: 'Organization/org-synthpharma-ag' },
     reason: 'Track review status transitions for the Velexa specification variation Task',
-    filterBy: [{ resourceType: 'Task', filterParameter: 'identifier', value: APIX.SYS.taskIdSystem + '|urn:uuid:2c9f3a10-velexa-variation-0001' }],
+    filterBy: [{ resourceType: 'Task', filterParameter: 'identifier', value: APIX.SYS.taskIdSystem + '|' + APIX.TASK_UUID }],
     channelType: { system: APIX.SYS.channelType, code: 'rest-hook' },
     endpoint: 'https://portal.synthpharma.example/fhir-subscription-notify',
     heartbeatPeriod: 300,
@@ -124,7 +133,3 @@ APIX.seed = {
     content: 'full-resource'
   }
 };
-
-/* The stable Task identity used throughout the storyline. */
-APIX.TASK_ID = 'task-velexa-variation';
-APIX.TASK_UUID = 'urn:uuid:2c9f3a10-velexa-variation-0001';

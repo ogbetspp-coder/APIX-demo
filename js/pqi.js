@@ -115,13 +115,18 @@ APIX.pqi = (function () {
     return '—';
   }
 
-  /* Build a single ObservationDefinition for a test at a given timing. */
-  function buildOD(test, timing) {
+  /* http canonical base for resources carried inside the collection Bundle
+     (real example uses an http url + a urn:uuid fullUrl for each entry).      */
+  var CANON_BASE = 'http://synthpharma.example/fhir';
+
+  /* Build a single ObservationDefinition for a test at a given timing.
+     `uuid` is the resource's real lowercase UUID (id + fullUrl + canonical).  */
+  function buildOD(test, timing, uuid) {
     var c = timing === 'release' ? test.release : test.shelfLife;
     var od = {
       resourceType: 'ObservationDefinition',
-      id: 'od-' + test.code.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + timing,
-      url: 'urn:uuid:od-' + test.code.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + timing,
+      id: uuid,
+      url: CANON_BASE + '/ObservationDefinition/' + uuid,
       title: test.display,
       status: 'active',
       code: { coding: [{ system: LOCAL_CS, code: test.code, display: test.display }], text: test.display }
@@ -142,6 +147,70 @@ APIX.pqi = (function () {
     return od;
   }
 
+  /* Build the four PQI "context" resources the Bundle profile mandates
+     (Product-Identification, Drug-Ingredient, Component-Substance, Organization).
+     Mirrors the published bundle-drug-product-specification-pq example with
+     Velexa-appropriate values. Returns { entries, mpdUuid }.                   */
+  function buildContext() {
+    var orgUuid = APIX.uuid();
+    var substanceUuid = APIX.uuid();
+    var ingredientUuid = APIX.uuid();
+    var mpdUuid = APIX.uuid();
+
+    // Drug-substance manufacturer (Organization slice).
+    var org = {
+      resourceType: 'Organization',
+      id: orgUuid,
+      identifier: [{ system: 'urn:oid:2.16.840.1.113883.4.82', value: '3009912345' }],
+      active: true,
+      type: [{ coding: [{ system: 'http://terminology.hl7.org/CodeSystem/pharmaceutical-organization-type', code: 'drug-substance-manufacture', display: 'Drug Substance Manufacture' }] }],
+      name: 'Helvetia Fine Chemicals AG',
+      contact: [{ address: { line: ['14 Rue de la Synthese'], city: 'Geneva', state: 'Geneve', postalCode: '1201', country: 'Switzerland' } }]
+    };
+
+    // Active substance (Component-Substance slice).
+    var substance = {
+      resourceType: 'SubstanceDefinition',
+      id: substanceUuid,
+      manufacturer: [{ reference: 'Organization/' + orgUuid }],
+      name: [{ name: 'Velexanol' }]
+    };
+
+    // Active ingredient (Drug-Ingredient slice).
+    var ingredient = {
+      resourceType: 'Ingredient',
+      id: ingredientUuid,
+      status: 'active',
+      for: [{ reference: 'MedicinalProductDefinition/' + mpdUuid }],
+      role: { coding: [{ system: 'http://hl7.org/fhir/ingredient-role', code: '100000072072', display: 'Active' }] },
+      substance: { code: { reference: { reference: 'SubstanceDefinition/' + substanceUuid } } }
+    };
+
+    // Finished product (Product-Identification slice).
+    var mpd = {
+      resourceType: 'MedicinalProductDefinition',
+      id: mpdUuid,
+      description: 'Velexa 175 mg film-coated tablets',
+      combinedPharmaceuticalDoseForm: { coding: [{ system: 'http://standardterms.edqm.eu', code: '10221000', display: 'Film-coated tablet' }] },
+      route: [{ coding: [{ system: 'http://standardterms.edqm.eu', code: '20053000', display: 'Oral use' }] }],
+      name: [{
+        productName: 'Velexa 175 mg film-coated tablets',
+        type: { coding: [{ system: PQ + '/CodeSystem/cs-productNameType-pq-example', code: 'Proprietary', display: 'Proprietary' }] },
+        part: [{ part: '175 mg', type: { coding: [{ system: 'http://hl7.org/fhir/medicinal-product-name-part-type', code: 'StrengthPart', display: 'Strength part' }] } }]
+      }]
+    };
+
+    return {
+      mpdUuid: mpdUuid,
+      entries: [
+        { fullUrl: 'urn:uuid:' + mpdUuid, resource: mpd },
+        { fullUrl: 'urn:uuid:' + ingredientUuid, resource: ingredient },
+        { fullUrl: 'urn:uuid:' + substanceUuid, resource: substance },
+        { fullUrl: 'urn:uuid:' + orgUuid, resource: org }
+      ]
+    };
+  }
+
   /* Normalise the source data into the PQI Bundle. Returns + caches it. */
   function normalize() {
     var entries = [];
@@ -149,21 +218,24 @@ APIX.pqi = (function () {
     var shelfActions = [];
 
     tests.forEach(function (t) {
-      var rel = buildOD(t, 'release');
-      var shelf = buildOD(t, 'shelfLife');
-      entries.push({ fullUrl: rel.url, resource: rel });
-      entries.push({ fullUrl: shelf.url, resource: shelf });
+      var rel = buildOD(t, 'release', APIX.uuid());
+      var shelf = buildOD(t, 'shelfLife', APIX.uuid());
+      entries.push({ fullUrl: 'urn:uuid:' + rel.id, resource: rel });
+      entries.push({ fullUrl: 'urn:uuid:' + shelf.id, resource: shelf });
       releaseActions.push({ code: { text: 'Test' }, definitionCanonical: rel.url });
       shelfActions.push({ code: { text: 'Test' }, definitionCanonical: shelf.url });
     });
 
+    var ctx = buildContext();
+    var planUuid = APIX.uuid();
+
     var plan = {
       resourceType: 'PlanDefinition',
-      id: 'plandefinition-drug-product-specification',
-      url: 'urn:uuid:plandefinition-drug-product-specification',
+      id: planUuid,
+      url: CANON_BASE + '/PlanDefinition/' + planUuid,
       title: 'SPECIFICATION(S) FOR DRUG PRODUCT',
       status: 'active',
-      subjectReference: { reference: 'MedicinalProductDefinition/' + APIX.seed.product.id, display: APIX.seed.product.name[0].productName },
+      subjectReference: { reference: 'MedicinalProductDefinition/' + ctx.mpdUuid, display: APIX.seed.product.name[0].productName },
       description: 'Finished-product release and shelf-life specification, normalised to PQI.',
       action: [{
         title: 'Specification(s) for Drug Product',
@@ -180,7 +252,7 @@ APIX.pqi = (function () {
       id: 'bundle-drug-product-specification',
       meta: { profile: [BUNDLE_PROFILE] },
       type: 'collection',
-      entry: [{ fullUrl: plan.url, resource: plan }].concat(entries)
+      entry: [{ fullUrl: 'urn:uuid:' + planUuid, resource: plan }].concat(ctx.entries).concat(entries)
     };
     return APIX.pqi.bundle;
   }
