@@ -16,6 +16,7 @@
   font-synthesis: none;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }   /* ensure the hidden attribute always wins over display rules */
 html, body { height: 100%; margin: 0; }
 body {
   background: radial-gradient(1200px 600px at 70% -10%, #1a2c47 0%, var(--bg) 55%);
