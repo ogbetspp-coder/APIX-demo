@@ -1,13 +1,18 @@
 /*
- * In-browser FHIR R5 store + event bus — the "server" for the self-contained
- * demo. Exposes a small surface (connect / submit / subscribe / updateTask) so
- * a real-HAPI REST adapter could be dropped in later behind the same interface.
+ * APIX.store — the demo's data orchestration layer. It owns the storyline's
+ * resource builders (dual-format spec, Task, regulator outputs) and the
+ * applicant/regulator workflow, but the actual FHIR I/O now runs through
+ * APIX.client (→ APIX.server, the in-memory MockFhirServer, or real HAPI).
  *
- * Emits CustomEvents on `bus`:
- *   'wire'         { entry }                  -> a FHIR interaction for the wire feed
- *   'task'         { task, firstTime }        -> Task created/updated
+ * Public API and emitted events are UNCHANGED — js/app.js consumes:
+ *   'task'         { task, firstTime }                      -> Task created/updated
  *   'notification' { bundle, businessStatus, taskStatus, seq } -> real-time push
- *   'reset'        {}                         -> cleared
+ *   'reset'        {}                                       -> cleared
+ *   'wire'         { entry... }                             -> legacy wire feed (kept)
+ *
+ * Creates/updates go to APIX.client (which emits its own richer 'io' events on
+ * APIX.client.bus). The status-change Subscription is delivered server-side; we
+ * relay that delivery into the unchanged 'notification' event below.
  */
 window.APIX = window.APIX || {};
 
@@ -26,7 +31,7 @@ APIX.OUTPUTS = {
 };
 
 APIX.store = {
-  resources: {},
+  resources: {},          // local cache: "Type/id" -> resource (mirrors server)
   bus: new EventTarget(),
   subscriptions: [],
   eventCount: 0,
@@ -34,6 +39,7 @@ APIX.store = {
   token: null,
   task: null,
   submissionInputs: [],
+  _deliveryWired: false,
 
   reset: function () {
     this.resources = {};
@@ -43,10 +49,42 @@ APIX.store = {
     this.token = null;
     this.task = null;
     this.submissionInputs = [];
+    // Fresh server state so a re-run starts clean.
+    if (APIX.MockFhirServer) {
+      APIX.server = new APIX.MockFhirServer();
+      this._deliveryWired = false;
+      this._wireClient();
+    }
     this.bus.dispatchEvent(new CustomEvent('reset'));
   },
 
-  /* Emit one line on the FHIR wire. dir: out|in|reg|sys */
+  /* Relay the mock server's subscription deliveries into the unchanged
+   * 'notification' event (and re-attach the client's 'io' recorder). */
+  _wireClient: function () {
+    var self = this;
+    if (!APIX.server) return;
+    // Re-attach client's io recorder for inbound deliveries (reset rebuilds server).
+    APIX.server.onDeliver = function (detail) {
+      if (APIX.client && APIX.client.record) {
+        APIX.client.record(
+          'Notification → subscriber',
+          { method: 'POST', url: detail.endpoint || 'Subscription/notify', headers: { 'Content-Type': 'application/fhir+json' }, body: detail.bundle },
+          { status: 200, statusText: 'OK', headers: { 'Content-Type': 'application/fhir+json' }, body: null }
+        );
+      }
+    };
+    if (!self._deliveryWired) {
+      APIX.server.onDelivery(function (detail) {
+        self.eventCount += 1;
+        self.bus.dispatchEvent(new CustomEvent('notification', {
+          detail: { bundle: detail.bundle, businessStatus: detail.businessStatus, taskStatus: detail.taskStatus, seq: self.eventCount }
+        }));
+      });
+      self._deliveryWired = true;
+    }
+  },
+
+  /* Legacy wire feed (kept for compatibility; app.js does not consume it). */
   wire: function (dir, method, url, label, resource) {
     this.seq += 1;
     this.bus.dispatchEvent(new CustomEvent('wire', {
@@ -54,30 +92,40 @@ APIX.store = {
     }));
   },
 
+  /* Cache a resource locally so get() resolves it even before/without a read. */
   put: function (resource, dir, label, silent) {
     var key = resource.resourceType + '/' + resource.id;
     this.resources[key] = resource;
-    if (!silent) this.wire(dir || 'out', 'POST', resource.resourceType, label || resource.resourceType, resource);
     return resource;
   },
 
-  get: function (ref) { return this.resources[ref] || null; },
+  /* Read a resource: prefer the live server, fall back to the local cache. */
+  get: function (ref) {
+    if (APIX.server && typeof ref === 'string' && ref.indexOf('/') > 0) {
+      var resp = APIX.server.request('GET', '/' + ref);
+      if (resp && resp.status === 200 && resp.body) { this.resources[ref] = resp.body; return resp.body; }
+    }
+    return this.resources[ref] || null;
+  },
 
   /* ---- APIX Step 1: Connect -------------------------------------------- */
   connect: function () {
-    this.wire('sys', 'POST', 'token', 'OAuth2 token request (SMART Backend Services)', {
-      grant_type: 'client_credentials',
-      client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
-      client_assertion: 'eyJhbGciOiJSUzI1NiIsImtpZCI6InN5bnRocGhhcm1hLTAxIn0…',
-      scope: 'system/Task.cruds system/DocumentReference.cruds system/Binary.cruds system/Subscription.cruds'
-    });
+    this._wireClient();
+    // Simulated SMART Backend Services OAuth2 token exchange — surfaced on the
+    // 'io' feed for the inspector (no real network; clearly a mock).
     this.token = 'eyJraWQiOiJzeW50aHBoYXJtYS0wMSIsInR5cCI6IkpXVC…';
-    this.wire('sys', '200', 'token', 'Access token issued (Bearer, 300s)', {
-      access_token: this.token, token_type: 'Bearer', expires_in: 300,
-      scope: 'system/Task.cruds system/DocumentReference.cruds system/Binary.cruds system/Subscription.cruds'
-    });
-    this.put(APIX.seed.applicant, 'out', 'Organization (SynthPharma AG)');
-    this.put(APIX.seed.endpoint, 'out', 'Endpoint (notification webhook)');
+    if (APIX.client && APIX.client.record) {
+      APIX.client.record('OAuth2 token (SMART Backend Services)',
+        { method: 'POST', url: '/oauth2/token', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: { grant_type: 'client_credentials', client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+                  scope: 'system/Task.cruds system/DocumentReference.cruds system/Binary.cruds system/Subscription.cruds' } },
+        { status: 200, statusText: 'OK', headers: { 'Content-Type': 'application/json' },
+          body: { access_token: this.token, token_type: 'Bearer', expires_in: 300,
+                  scope: 'system/Task.cruds system/DocumentReference.cruds system/Binary.cruds system/Subscription.cruds' } });
+    }
+    // Register applicant Organization + notification Endpoint.
+    this.put(APIX.client.create(APIX.seed.applicant, { label: 'Register Organization (SynthPharma AG)' }));
+    this.put(APIX.client.create(APIX.seed.endpoint, { label: 'Register Endpoint (notification webhook)' }));
   },
 
   /* ---- Build the dual-format spec + supporting documents --------------- */
@@ -144,18 +192,22 @@ APIX.store = {
     this.submissionInputs = [];
 
     // Step 2 — Stream each file as Binary
-    docs.forEach(function (d) { self.put(d.binary, 'out', 'Binary (' + d.binary.contentType + ')'); });
+    docs.forEach(function (d) {
+      self.put(APIX.client.create(d.binary, { label: 'Stream document (Binary · ' + d.binary.contentType + ')' }));
+    });
     // Step 3 — Describe each with a DocumentReference
     docs.forEach(function (d) {
-      self.put(d.docref, 'out', 'DocumentReference — ' + d.docref.content[0].attachment.title);
+      self.put(APIX.client.create(d.docref, { label: 'Describe — ' + d.docref.content[0].attachment.title }));
       self.submissionInputs.push({
         type: { coding: [{ system: APIX.SYS.ctd, code: d.docref.type.coding[0].code, display: d.docref.type.coding[0].display }] },
         valueReference: { reference: 'DocumentReference/' + d.docref.id, display: d.docref.content[0].attachment.title }
       });
     });
-    // Step 4 — Orchestrate with a Task
-    this.task = this.buildTask();
-    this.put(this.task, 'out', 'Task — Type IB variation (created)');
+    // Step 4 — Orchestrate with a Task (POST triggers the create-topic)
+    var task = this.buildTask();
+    var stored = APIX.client.create(task, { label: 'Orchestrate — Task (Type IB variation, created)' });
+    this.task = stored;                 // server-returned Task (with server meta)
+    this.put(stored);
     // create-topic: regulator (owner) is notified -> populate its console
     this.bus.dispatchEvent(new CustomEvent('task', { detail: { task: this.task, firstTime: true } }));
     return this.task;
@@ -190,24 +242,26 @@ APIX.store = {
 
   /* ---- APIX Step 5: Subscribe ------------------------------------------ */
   subscribe: function () {
-    this.put(APIX.seed.topicStatus, 'out', 'SubscriptionTopic (status change)', true);
+    // Register the topic on the server (so the engine can evaluate it) and the
+    // Subscription itself (POSTed through the client → an 'io' entry).
+    if (APIX.server) {
+      APIX.server.registerTopic(APIX.seed.topicStatus);
+      APIX.server.registerTopic(APIX.seed.topicCreate);
+    }
     var sub = APIX.seed.subscription;
+    APIX.client.createSubscription(sub);
+    if (APIX.server) APIX.server.registerSubscription(sub);
     this.subscriptions.push(sub);
-    this.put(sub, 'out', 'Subscription (rest-hook, Task status changes)');
+    this.put(sub);
   },
 
   /* ---- Regulator advances the Task; fires notifications ---------------- */
   updateTask: function (effect) {
     var self = this;
-    var prevStatus = this.task.status;
     this.task.status = effect.status;
     this.task.businessStatus = { coding: [{ system: APIX.SYS.businessStatus, code: effect.businessStatus, display: APIX.display('businessStatus', effect.businessStatus) }] };
     var nowIso = new Date().toISOString();
     this.task.lastModified = nowIso;
-    // Simulate server-side versioning: bump meta.versionId + lastUpdated on every PUT.
-    this.task.meta = this.task.meta || {};
-    this.task.meta.versionId = String((parseInt(this.task.meta.versionId, 10) || 1) + 1);
-    this.task.meta.lastUpdated = nowIso;
 
     if (effect.addProcedureNo) {
       this.task.identifier.push({ use: 'official', type: { coding: [{ system: APIX.SYS.idType, code: 'apixregulatorprocedureno', display: 'APIX Regulator Procedure Number' }] }, system: APIX.SYS.procedureSystem, value: 'PROC-2026-04210' });
@@ -218,28 +272,22 @@ APIX.store = {
         var o = APIX.OUTPUTS[k];
         var dref = self._docref(o.id, o.ctd, 'application/pdf', o.title, 'Binary/binary-' + o.id);
         dref.author = [{ reference: 'Organization/' + APIX.seed.regulator.id }];
-        self.put(dref, 'reg', 'DocumentReference — ' + o.title + ' (regulator output)');
+        self.put(APIX.client.create(dref, { label: 'Regulator output — ' + o.title }));
         self.task.output.push({ type: { coding: [{ system: APIX.SYS.ctd, code: o.ctd, display: APIX.display('ctd', o.ctd) }] }, valueReference: { reference: 'DocumentReference/' + o.id, display: o.title } });
       });
     }
 
-    // PUT the updated Task
-    this.resources['Task/' + this.task.id] = this.task;
-    this.wire('reg', 'PUT', 'Task/' + this.task.id, 'Task updated → ' + effect.status + ' / ' + APIX.display('businessStatus', effect.businessStatus), this.task);
+    // PUT the updated Task. The server bumps meta.versionId + lastUpdated and,
+    // because status changed, fires the status-change topic → delivers a
+    // subscription-notification → our delivery listener emits 'notification'.
+    var stored = APIX.client.update(this.task, { label: 'Task → ' + effect.status + ' / ' + APIX.display('businessStatus', effect.businessStatus) });
+    this.task = stored;          // adopt server meta (versionId bumped by server)
+    this.put(stored);
     this.bus.dispatchEvent(new CustomEvent('task', { detail: { task: this.task, firstTime: false } }));
-
-    // Topic trigger: %previous.status != %current.status
-    if (prevStatus !== effect.status && this.subscriptions.length) {
-      var bundle = this.buildNotificationBundle(effect.status, effect.businessStatus);
-      setTimeout(function () {
-        self.wire('in', 'POST', 'notification', 'Subscription notification → SynthPharma webhook', bundle);
-        self.bus.dispatchEvent(new CustomEvent('notification', {
-          detail: { bundle: bundle, businessStatus: effect.businessStatus, taskStatus: effect.status, seq: self.eventCount }
-        }));
-      }, 700);
-    }
   },
 
+  /* Build the R5 subscription-notification Bundle (kept for any callers that
+   * want it directly; the live notification path builds it server-side). */
   buildNotificationBundle: function (taskStatus, businessStatusCode) {
     this.eventCount += 1;
     var n = String(this.eventCount);
