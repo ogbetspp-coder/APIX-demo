@@ -1,248 +1,266 @@
 /*
- * UI controller for the APIX Live demo. Renders the three panels, drives the
- * presenter-paced scenario, and reacts to events from APIX.store (the "server").
+ * UI controller — act-based, presentation-grade. Drives the presenter-paced
+ * scenario across three acts (Author → Send → Review & track), keeps the raw
+ * FHIR one click away ("View { }"), and makes the Subscription feedback loop
+ * visually explicit. The FHIR data layer (APIX.store) is unchanged.
  */
 (function () {
   var store = APIX.store;
-  var stepIndex = 0;
-  var donePhases = {};
+  var S = APIX.scenario;
+  var i = 0;                 // current step index
+  var reviewDone = {};       // regulator review checklist progress
+  var reached = {};          // applicant tracker milestones
+  var lastNotif = null;      // most recent notification Bundle (for peek)
+  var apixDrawn = false;
 
-  /* ---- tiny DOM helpers ------------------------------------------------- */
+  var APIX_STEPS = ['Connect', 'Stream', 'Describe', 'Orchestrate', 'Subscribe'];
+  var REVIEW = [
+    { key: 'receive', label: 'Acknowledge receipt' },
+    { key: 'validate', label: 'Validate submission' },
+    { key: 'assess', label: 'Scientific assessment' },
+    { key: 'approve', label: 'Decision' }
+  ];
+
   function el(id) { return document.getElementById(id); }
-  function show(node) { if (node) node.hidden = false; }
   function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
-  function fmtBytes(n) { return n >= 1e6 ? (n / 1e6).toFixed(1) + ' MB' : Math.round(n / 1e3) + ' KB'; }
+  function bytes(n) { return n >= 1e6 ? (n / 1e6).toFixed(1) + ' MB' : Math.round(n / 1e3) + ' KB'; }
+  function actOf(step) {
+    var t = step.effect.type;
+    if (t === 'pull' || t === 'normalize' || t === 'render') return 1;
+    if (t === 'connect' || t === 'submit' || t === 'subscribe') return 2;
+    return 3;
+  }
 
-  /* ---- phase rail ------------------------------------------------------- */
-  function renderRail() {
-    var cur = APIX.scenario[stepIndex] ? APIX.scenario[stepIndex].phase : null;
-    el('rail').innerHTML = APIX.acts.map(function (act) {
-      var chips = act.steps.map(function (s) {
-        var cls = 'chip';
-        if (donePhases[s]) cls += ' done';
-        if (s === cur) cls += ' active';
-        return '<span class="' + cls + '">' + esc(s) + '</span>';
-      }).join('<span class="sep">›</span>');
-      return '<div class="act"><span class="act-label">' + esc(act.label) + '</span>' +
-             '<div class="chips">' + chips + '</div></div>';
-    }).join('');
+  /* ---- views + stepper -------------------------------------------------- */
+  function showView(act) {
+    el('view-author').hidden = (act !== 1);
+    if (act !== 1 && el('view-exchange').hidden) {
+      el('view-exchange').hidden = false;
+      if (!apixDrawn) { drawApixSteps(); apixDrawn = true; }
+    }
+  }
+  function setStepper(act) {
+    [].forEach.call(el('stepper').children, function (li) {
+      var a = +li.getAttribute('data-act');
+      li.classList.toggle('active', a === act);
+      li.classList.toggle('done', a < act);
+    });
   }
 
   /* ---- controls / step engine ------------------------------------------ */
   function refreshControls() {
-    var step = APIX.scenario[stepIndex];
+    var step = S[i];
     if (step) {
       el('narration').textContent = step.narration;
       el('stepbtn').innerHTML = step.button + ' ▶';
       el('stepbtn').disabled = false;
-      el('progress').textContent = 'Step ' + (stepIndex + 1) + ' / ' + APIX.scenario.length +
-        '  ·  ' + (step.actor === 'regulator' ? 'Regulator' : 'Applicant');
+      el('progress').textContent = 'Step ' + (i + 1) + ' / ' + S.length;
     } else {
-      el('narration').innerHTML = '✅ <strong>End to end in minutes.</strong> Every status change was timestamped — that audit trail is your cycle-time analytics. APIX carried both the PDF and the structured FHIR over the same rails.';
-      el('stepbtn').innerHTML = 'Done';
-      el('stepbtn').disabled = true;
-      el('progress').textContent = 'Complete · ' + APIX.scenario.length + ' / ' + APIX.scenario.length;
+      el('narration').innerHTML = '✅ <strong>Approved — end to end in minutes.</strong> Every status change was timestamped (your cycle-time analytics), and APIX carried both the PDF and the structured FHIR over the same rails.';
+      el('stepbtn').innerHTML = 'Done'; el('stepbtn').disabled = true;
+      el('progress').textContent = 'Complete';
+      setStepper(4);
     }
-    renderRail();
+    renderReview();
   }
 
   function runStep() {
-    var step = APIX.scenario[stepIndex];
+    var step = S[i];
     if (!step) return;
-    var e = step.effect;
-    switch (e.type) {
-      case 'pull':      handlePull(); break;
+    var act = actOf(step);
+    showView(act); setStepper(act);
+    if (act === 3) el('review').hidden = false;
+
+    switch (step.effect.type) {
+      case 'pull': handlePull(); break;
       case 'normalize': handleNormalize(); break;
-      case 'render':    show(el('card-formats')); break;
-      case 'connect':   show(el('card-conn')); store.connect(); el('conn-status').className = 'status status-on'; el('conn-status').textContent = '🔒 Connected · Bearer token · Organization + Endpoint registered'; break;
-      case 'submit':    handleSubmit(); break;
+      case 'render': show('b-formats'); show('a-render'); break;
+      case 'connect': handleConnect(); break;
+      case 'submit': handleSubmit(); break;
       case 'subscribe': handleSubscribe(); break;
       case 'updateTask':
-        if (e.flexibility) show(el('reg-actions'));
-        store.updateTask(e);
+        if (step.effect.flexibility) el('reg-flex').hidden = false;
+        store.updateTask(step.effect);
+        reviewDone[step.key] = true;
         break;
     }
-    donePhases[step.phase] = true;
-    stepIndex += 1;
+    i += 1;
     refreshControls();
   }
+  function show(id) { el(id).hidden = false; }
 
-  /* ---- ACT 1 · PQI ------------------------------------------------------ */
+  /* ---- ACT 1 ------------------------------------------------------------ */
   function handlePull() {
-    show(el('card-sources'));
+    show('b-sources');
     el('sources').innerHTML = APIX.pqi.sources.map(function (s) {
       return '<div class="src"><div class="src-head"><span class="src-name">' + esc(s.system) +
-        '</span><span class="tag">' + esc(s.tag) + '</span></div>' +
-        '<div class="src-note">' + esc(s.note) + '</div>' +
-        '<pre class="src-rows">' + esc(s.rows.join('\n')) + '</pre></div>';
+        '</span><span class="tag">' + esc(s.tag) + '</span></div><div class="src-note">' + esc(s.note) +
+        '</div><pre class="src-rows">' + esc(s.rows.join('\n')) + '</pre></div>';
     }).join('');
   }
-
   function handleNormalize() {
-    APIX.pqi.normalize();
-    show(el('card-spec'));
+    APIX.pqi.normalize(); show('a-normalize'); show('b-spec');
     var rows = APIX.pqi.specRows().map(function (r) {
       var shelf = r.changed
         ? '<span class="diff-old">' + esc(r.before) + '</span> → <span class="diff-new">' + esc(r.shelfLife) + ' w/w</span>'
         : esc(r.shelfLife);
-      return '<tr' + (r.changed ? ' class="row-changed"' : '') + '><td>' + esc(r.test) + '</td>' +
-        '<td class="dim">' + esc(r.method) + '</td><td>' + esc(r.release) + '</td><td>' + shelf + '</td></tr>';
+      return '<tr' + (r.changed ? ' class="row-changed"' : '') + '><td>' + esc(r.test) +
+        '</td><td class="dim">' + esc(r.method) + '</td><td>' + esc(r.release) + '</td><td>' + shelf + '</td></tr>';
     }).join('');
-    el('spec').innerHTML =
-      '<table class="spec-table"><thead><tr><th>Test</th><th>Method</th><th>Release</th><th>Shelf life</th></tr></thead>' +
-      '<tbody>' + rows + '</tbody></table>' +
-      '<p class="change-note">⚠ One change in this variation: <strong>' + esc(APIX.pqi.CHANGE.label) + '</strong> (' +
-      esc(APIX.pqi.CHANGE.before) + ' → ' + esc(APIX.pqi.CHANGE.after) + ')</p>';
+    el('spec').innerHTML = '<table class="spec-table"><thead><tr><th>Test</th><th>Method</th><th>Release</th><th>Shelf life</th></tr></thead><tbody>' +
+      rows + '</tbody></table><p class="change-note">⚠ The only change in this variation: <strong>' +
+      esc(APIX.pqi.CHANGE.label) + '</strong> — ' + esc(APIX.pqi.CHANGE.before) + ' → <strong>' + esc(APIX.pqi.CHANGE.after) + '</strong></p>';
   }
 
-  /* ---- ACT 2 · APIX ----------------------------------------------------- */
-  function docIcon(contentType) { return contentType === 'application/fhir+json' ? '{ }' : '📄'; }
-
-  function renderPayload(node) {
-    if (!store.task) return;
-    node.innerHTML = '<div class="payload-head">Task payload · ' + store.task.input.length + ' documents</div>' +
-      store.task.input.map(function (inp) {
-        var dref = store.get(inp.valueReference.reference);
-        var ct = dref ? dref.content[0].attachment.contentType : 'application/pdf';
-        var size = dref ? dref.content[0].attachment.size : 0;
-        var spec = inp.type.coding[0].code === '3.2.P.5.1';
-        return '<div class="doc' + (spec ? ' doc-spec' : '') + '"><span class="doc-ic">' + docIcon(ct) + '</span>' +
-          '<span class="doc-ct">' + esc(inp.type.coding[0].code) + '</span>' +
-          '<span class="doc-title">' + esc(inp.valueReference.display) + '</span>' +
-          '<span class="doc-size">' + fmtBytes(size) + '</span></div>';
-      }).join('');
+  /* ---- ACT 2 ------------------------------------------------------------ */
+  function drawApixSteps() {
+    el('apixsteps').innerHTML = APIX_STEPS.map(function (s, n) {
+      return '<div class="astep" id="astep-' + n + '"><span class="tick">✓</span>' + esc(s) + '</div>';
+    }).join('');
   }
-
-  function statusBadges(task) {
-    return '<span class="badge badge-status">status: ' + esc(task.status) + '</span>' +
-      '<span class="badge badge-biz">' + esc(task.businessStatus.coding[0].display) + '</span>' +
-      (task.identifier.length > 1 ? '<span class="badge badge-proc">' + esc(task.identifier[1].value) + '</span>' : '');
+  function markApix(name) {
+    var n = APIX_STEPS.indexOf(name);
+    if (n >= 0) el('astep-' + n).classList.add('done');
   }
-
+  function flyChip(text, dir) {
+    var c = document.createElement('div');
+    c.className = 'chip-fly ' + dir;
+    c.textContent = text;
+    el('lane').appendChild(c);
+    setTimeout(function () { if (c.parentNode) c.parentNode.removeChild(c); }, 1200);
+  }
+  function docsHtml(inputs) {
+    return inputs.map(function (inp) {
+      var d = store.get(inp.valueReference.reference);
+      var ct = d ? d.content[0].attachment.contentType : 'application/pdf';
+      var size = d ? d.content[0].attachment.size : 0;
+      var spec = inp.type.coding[0].code === '3.2.P.5.1';
+      var ic = ct === 'application/fhir+json' ? '{ }' : '📄';
+      return '<div class="doc' + (spec ? ' doc-spec' : '') + '"><span class="doc-ic">' + ic + '</span>' +
+        '<span class="doc-ct">' + esc(inp.type.coding[0].code) + '</span>' +
+        '<span class="doc-title">' + esc(inp.valueReference.display) + '</span>' +
+        '<span class="doc-size">' + bytes(size) + '</span>' +
+        '<button class="peek" data-peek="' + inp.valueReference.reference + '">View</button></div>';
+    }).join('');
+  }
+  function handleConnect() {
+    store.connect();
+    el('conn').className = 'conn connected';
+    el('conn').innerHTML = '<span class="dot"></span> Connected · Bearer token · Organization + Endpoint registered';
+    markApix('Connect');
+  }
   function handleSubmit() {
     store.submit();
-    renderPayload(el('payload'));
-    var ta = el('task-applicant'); show(ta);
-    ta.innerHTML = statusBadges(store.task);
+    var t = store.task;
+    el('pkg').hidden = false;
+    el('pkg').innerHTML = '<div class="pkg-head">Submission package · ' + t.input.length +
+      ' documents <button class="peek" data-peek="Task">View Task { }</button></div>' + docsHtml(t.input);
+    markApix('Stream'); markApix('Describe'); markApix('Orchestrate');
+    flyChip('📦 ' + t.input.length + ' documents →', 'right');
+    setTimeout(revealRegulator, 950);
   }
-
+  function revealRegulator() {
+    el('inbox-empty').hidden = true; el('reg').hidden = false;
+    el('reg-docs').innerHTML = '<div class="payload-head">Received documents</div>' + docsHtml(store.task.input);
+    updateRegStatus(store.task);
+  }
   function handleSubscribe() {
     store.subscribe();
-    addNote('🔔 Subscribed to Task status changes — notifications will arrive automatically.');
-    var t = el('timeline'); show(t);
-    renderTimeline('submitted');
+    markApix('Subscribe');
+    el('loopnote').hidden = false;
+    el('tracker').hidden = false;
+    renderTracker('submitted');
   }
 
-  /* ---- timeline (FedEx-style) ------------------------------------------ */
-  var reached = {};
-  function renderTimeline(markCode) {
-    if (markCode) reached[markCode] = new Date();
-    el('timeline').innerHTML = '<div class="tl-title">Submission tracking</div><div class="tl-rail">' +
-      APIX.businessStatusFlow.map(function (m) {
-        var done = !!reached[m.code];
-        var ts = done ? reached[m.code].toLocaleTimeString() : '';
-        return '<div class="tl-node ' + (done ? 'done' : '') + '"><span class="tl-dot">' + (done ? m.icon : '○') +
-          '</span><span class="tl-lbl">' + esc(m.label) + '</span><span class="tl-ts">' + ts + '</span></div>';
-      }).join('') + '</div>';
-  }
-
-  function addNote(html) {
-    var d = document.createElement('div');
-    d.className = 'note';
-    d.innerHTML = html;
-    el('notes').appendChild(d);
-  }
-
-  /* ---- regulator console ------------------------------------------------ */
-  function renderRegulator(task, firstTime) {
-    if (firstTime) { el('reg-empty').hidden = true; show(el('card-regtask')); renderPayload(el('reg-docs')); }
-    el('reg-badges').innerHTML = statusBadges(task);
+  /* ---- ACT 3 ------------------------------------------------------------ */
+  function updateRegStatus(task) {
+    el('reg-status').innerHTML = '<span class="rs-label">Task status</span>' +
+      '<span class="badge badge-status">' + esc(task.status) + '</span>' +
+      '<span class="badge badge-biz">' + esc(task.businessStatus.coding[0].display) + '</span>' +
+      (task.identifier.length > 1 ? '<span class="badge badge-proc">' + esc(task.identifier[1].value) + '</span>' : '');
     if (task.output && task.output.length) {
-      el('reg-outputs').innerHTML = '<div class="payload-head">Outputs produced</div>' +
+      el('reg-outputs').innerHTML = '<div class="payload-head">Outputs sent back</div>' +
         task.output.map(function (o) {
           return '<div class="doc"><span class="doc-ic">📄</span><span class="doc-title">' + esc(o.valueReference.display) + '</span></div>';
         }).join('');
     }
   }
-
-  /* ---- wire feed -------------------------------------------------------- */
-  function appendWire(d) {
-    var line = document.createElement('div');
-    line.className = 'wire-line dir-' + d.dir;
-    var arrow = d.dir === 'in' ? '◀' : (d.dir === 'reg' ? '▣' : (d.dir === 'sys' ? '◆' : '▶'));
-    line.innerHTML = '<div class="wire-top"><span class="wseq">' + d.seq + '</span>' +
-      '<span class="warr">' + arrow + '</span><span class="wmethod">' + esc(d.method) + '</span>' +
-      '<span class="wurl">' + esc(d.url) + '</span><span class="wlabel">' + esc(d.label) + '</span></div>';
-    if (d.resource) {
-      var pre = document.createElement('pre');
-      pre.className = 'wire-json';
-      pre.hidden = true;
-      pre.innerHTML = APIX.highlight(d.resource);
-      line.appendChild(pre);
-      line.querySelector('.wire-top').addEventListener('click', function () { pre.hidden = !pre.hidden; });
-      line.querySelector('.wire-top').classList.add('clickable');
-    }
-    var feed = el('wirefeed');
-    feed.appendChild(line);
-    feed.scrollTop = feed.scrollHeight;
+  function renderReview() {
+    if (el('review').hidden) return;
+    var next = S[i];
+    var activeKey = (next && actOf(next) === 3) ? next.key : null;
+    el('review').innerHTML = '<div class="review-head">Regulatory review</div>' + REVIEW.map(function (it) {
+      var cls = 'ritem' + (reviewDone[it.key] ? ' done' : '') + (it.key === activeKey ? ' active' : '');
+      return '<div class="' + cls + '"><span class="rdot">' + (reviewDone[it.key] ? '✓' : '') + '</span>' + esc(it.label) + '</div>';
+    }).join('');
+  }
+  function renderTracker(markCode, justNow) {
+    if (markCode) reached[markCode] = new Date();
+    el('tracker').innerHTML = '<div class="tracker-head">Live submission tracking ' +
+      (lastNotif ? '<button class="peek" data-peek="notif">last notification { }</button>' : '') + '</div>' +
+      APIX.businessStatusFlow.map(function (m) {
+        var done = !!reached[m.code];
+        var ts = done ? reached[m.code].toLocaleTimeString() : '';
+        return '<div class="tnode ' + (done ? 'done' : '') + (m.code === justNow ? ' just' : '') + '">' +
+          '<span class="tdot">' + (done ? m.icon : '○') + '</span><span class="tlbl">' + esc(m.label) +
+          '</span><span class="tts">' + ts + '</span></div>';
+      }).join('');
   }
 
-  /* ---- modal ------------------------------------------------------------ */
+  /* ---- modal / peeks ---------------------------------------------------- */
   function openModal(html) { el('modal-body').innerHTML = html; el('modal').hidden = false; }
-  function closeModal() { el('modal').hidden = true; }
-
+  function openJson(title, obj) { openModal('<h2 class="modal-title">' + esc(title) + '</h2><pre class="modal-json">' + APIX.highlight(obj) + '</pre>'); }
   function openDoc(kind) {
-    if (kind === 'pdf') {
-      openModal('<h2 class="modal-title">📄 Rendered eCTD 3.2.P.5.1 (PDF view)</h2>' + APIX.pqi.renderSpecHtml());
-    } else if (kind === 'fhir') {
-      openModal('<h2 class="modal-title">{ } PQI FHIR Bundle — Bundle-drug-product-specification-pq</h2>' +
-        '<pre class="modal-json">' + APIX.highlight(APIX.pqi.bundle || APIX.pqi.normalize()) + '</pre>');
-    } else if (kind === 'validate') {
+    if (kind === 'pdf') openModal('<h2 class="modal-title">📄 Rendered eCTD 3.2.P.5.1 (PDF view)</h2>' + APIX.pqi.renderSpecHtml());
+    else if (kind === 'fhir') openJson('{ } PQI FHIR Bundle — Bundle-drug-product-specification-pq', APIX.pqi.bundle || APIX.pqi.normalize());
+    else if (kind === 'validate') {
       var rows = APIX.pqi.validate().map(function (v) {
         return '<tr><td>' + esc(v.test) + '</td><td>' + esc(v.criterion) + '</td><td>' + esc(v.measured) +
-          '</td><td class="' + (v.pass ? 'pass' : 'fail') + '">' + (v.pass ? '✓ PASS' : '✗ FAIL') + '</td></tr>';
+          '</td><td class="pass">✓ PASS</td></tr>';
       }).join('');
-      openModal('<h2 class="modal-title">✓ Structured validation — batch vs acceptance criteria</h2>' +
+      openModal('<h2 class="modal-title">✓ Structured validation — batch vs. acceptance criteria</h2>' +
         '<p class="muted">Read directly from the PQI ObservationDefinitions — no transcription from a PDF.</p>' +
-        '<table class="val-table"><thead><tr><th>Test</th><th>Criterion</th><th>Measured</th><th>Result</th></tr></thead><tbody>' +
-        rows + '</tbody></table>');
+        '<table class="val-table"><thead><tr><th>Test</th><th>Criterion</th><th>Measured</th><th>Result</th></tr></thead><tbody>' + rows + '</tbody></table>');
     }
   }
+  function openPeek(ref) {
+    if (ref === 'Task') openJson('{ } Task — Type IB variation', store.task);
+    else if (ref === 'notif') openJson('{ } Subscription notification Bundle', lastNotif);
+    else { var r = store.get(ref); if (r) openJson('{ } ' + r.resourceType + (r.content ? ' — ' + r.content[0].attachment.title : ''), r); }
+  }
 
-  /* ---- wiring ----------------------------------------------------------- */
-  store.bus.addEventListener('wire', function (ev) { appendWire(ev.detail); });
+  /* ---- store events ----------------------------------------------------- */
   store.bus.addEventListener('task', function (ev) {
-    renderRegulator(ev.detail.task, ev.detail.firstTime);
-    if (el('task-applicant')) el('task-applicant').innerHTML = statusBadges(ev.detail.task);
+    if (!el('reg').hidden && !ev.detail.firstTime) updateRegStatus(ev.detail.task);
   });
   store.bus.addEventListener('notification', function (ev) {
-    renderTimeline(ev.detail.businessStatus);
-    addNote('🔔 Real-time update: <strong>' + esc(APIX.display('businessStatus', ev.detail.businessStatus)) + '</strong>');
-    el('card-conn').classList.add('flash');
-    setTimeout(function () { el('card-conn').classList.remove('flash'); }, 600);
+    lastNotif = ev.detail.bundle;
+    flyChip('🔔 ' + APIX.display('businessStatus', ev.detail.businessStatus), 'left');
+    setTimeout(function () { renderTracker(ev.detail.businessStatus, ev.detail.businessStatus); }, 520);
   });
 
+  /* ---- reset ------------------------------------------------------------ */
   function resetAll() {
-    stepIndex = 0; donePhases = {}; reached = {};
+    i = 0; reviewDone = {}; reached = {}; lastNotif = null; apixDrawn = false;
     store.reset();
-    ['card-sources', 'card-spec', 'card-formats', 'card-conn'].forEach(function (id) { el(id).hidden = true; });
-    el('sources').innerHTML = el('spec').innerHTML = el('payload').innerHTML = el('notes').innerHTML = '';
-    el('wirefeed').innerHTML = el('reg-docs').innerHTML = el('reg-outputs').innerHTML = el('reg-badges').innerHTML = '';
-    el('task-applicant').hidden = true; el('timeline').hidden = true; el('reg-actions').hidden = true;
-    el('card-regtask').hidden = true; el('reg-empty').hidden = false;
-    el('conn-status').className = 'status status-off'; el('conn-status').textContent = 'Not connected';
+    ['b-sources', 'a-normalize', 'b-spec', 'a-render', 'b-formats', 'pkg', 'tracker', 'reg', 'review', 'reg-flex', 'loopnote'].forEach(function (id) { el(id).hidden = true; });
+    ['sources', 'spec', 'pkg', 'reg-docs', 'reg-outputs', 'reg-status', 'review', 'apixsteps', 'lane'].forEach(function (id) { el(id).innerHTML = ''; });
+    el('inbox-empty').hidden = false;
+    el('conn').className = 'conn'; el('conn').innerHTML = '<span class="dot"></span> Not connected';
+    el('view-exchange').hidden = true; el('view-author').hidden = false;
     refreshControls();
   }
 
-  /* document-open buttons (applicant format chips + regulator actions) */
+  /* ---- wiring ----------------------------------------------------------- */
   document.addEventListener('click', function (ev) {
-    var t = ev.target.closest('[data-doc]');
-    if (t) openDoc(t.getAttribute('data-doc'));
+    var d = ev.target.closest('[data-doc]'); if (d) { openDoc(d.getAttribute('data-doc')); return; }
+    var p = ev.target.closest('[data-peek]'); if (p) { openPeek(p.getAttribute('data-peek')); return; }
   });
   el('stepbtn').addEventListener('click', runStep);
   el('resetbtn').addEventListener('click', resetAll);
-  el('modal-close').addEventListener('click', closeModal);
-  el('modal').addEventListener('click', function (ev) { if (ev.target === el('modal')) closeModal(); });
+  el('modal-close').addEventListener('click', function () { el('modal').hidden = true; });
+  el('modal').addEventListener('click', function (ev) { if (ev.target === el('modal')) el('modal').hidden = true; });
 
+  setStepper(1);
   refreshControls();
 })();
