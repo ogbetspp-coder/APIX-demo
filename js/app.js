@@ -21,6 +21,23 @@
     { key: 'approve', label: 'Decision' }
   ];
 
+  /* Plain-language phrasing for each businessStatus the regulator pushes back —
+     used by the spelled-out Industry ⇄ Health Authority conversation log. */
+  var BIZ_PLAIN = {
+    'received': 'Acknowledged receipt — status now Received',
+    'validation-successful': 'Validation successful — submission accepted for assessment',
+    'under-assessment': 'Under assessment — scientific review has started',
+    'approved': 'Approved — positive decision, approval letter attached',
+    'rejected': 'Rejected — negative decision',
+    'validation-failed': 'Validation failed — submission cannot be accepted',
+    'clock-stop': 'Clock stopped — awaiting further information',
+    'decision-pending': 'Decision pending'
+  };
+  function bizPlain(code) { return BIZ_PLAIN[code] || APIX.display('businessStatus', code); }
+
+  var ioEntries = [];        // captured { } request/response interactions
+  var ioOpen = false;        // inspector drawer expanded?
+
   function el(id) { return document.getElementById(id); }
   function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
   function bytes(n) { return n >= 1e6 ? (n / 1e6).toFixed(1) + ' MB' : Math.round(n / 1e3) + ' KB'; }
@@ -74,7 +91,7 @@
     switch (step.effect.type) {
       case 'pull': handlePull(); break;
       case 'normalize': handleNormalize(); break;
-      case 'render': show('b-formats'); show('a-render'); break;
+      case 'render': handleConsolidate(); break;
       case 'connect': handleConnect(); break;
       case 'submit': handleSubmit(); break;
       case 'subscribe': handleSubscribe(); break;
@@ -98,18 +115,61 @@
         '</div><pre class="src-rows">' + esc(s.rows.join('\n')) + '</pre></div>';
     }).join('');
   }
+  /* Friendly relationship phrasing for a ConceptMap target.relationship. */
+  function relText(rel) {
+    if (rel === 'equivalent') return 'equivalent';
+    if (rel === 'source-is-narrower-than-target') return 'narrower → broader';
+    if (rel === 'source-is-broader-than-target') return 'broader → narrower';
+    return esc(rel);
+  }
+  /* Act 1 · Harmonize — reveal each ConceptMap mapping one row at a time and
+     fire a real ConceptMap/$translate per row (visible in the I/O inspector). */
   function handleNormalize() {
-    APIX.pqi.normalize(); show('a-normalize'); show('b-spec');
-    var rows = APIX.pqi.specRows().map(function (r) {
-      var shelf = r.changed
-        ? '<span class="diff-old">' + esc(r.before) + '</span> → <span class="diff-new">' + esc(r.shelfLife) + ' w/w</span>'
-        : esc(r.shelfLife);
-      return '<tr' + (r.changed ? ' class="row-changed"' : '') + '><td>' + esc(r.test) +
-        '</td><td class="dim">' + esc(r.method) + '</td><td>' + esc(r.release) + '</td><td>' + shelf + '</td></tr>';
-    }).join('');
-    el('spec').innerHTML = '<table class="spec-table"><thead><tr><th>Test</th><th>Method</th><th>Release</th><th>Shelf life</th></tr></thead><tbody>' +
-      rows + '</tbody></table><p class="change-note">⚠ The only change in this variation: <strong>' +
-      esc(APIX.pqi.CHANGE.label) + '</strong> — ' + esc(APIX.pqi.CHANGE.before) + ' → <strong>' + esc(APIX.pqi.CHANGE.after) + '</strong></p>';
+    show('a-normalize'); show('b-spec');
+    var rows = APIX.terminology.rows();
+    var host = el('harmonize');
+    host.innerHTML = '';
+    rows.forEach(function (r, n) {
+      var div = document.createElement('div');
+      div.className = 'hmap';
+      div.innerHTML =
+        '<span class="hm-src">' + esc(r.source.display) + ' <code>(' + esc(r.source.code) + ')</code></span>' +
+        '<span class="hm-gate">⟨ConceptMap⟩</span>' +
+        '<span class="hm-tgt">' + esc(r.target.display) + ' <code>(' + esc(r.target.code) + ')</code></span>' +
+        '<span class="hm-rel">' + relText(r.relationship) + '</span>';
+      host.appendChild(div);
+      (function (row, node) {
+        setTimeout(function () {
+          node.classList.add('in');
+          APIX.client.translate(row.source.system, row.source.code);
+        }, 250 * n + 120);
+      })(r, div);
+    });
+  }
+  /* Act 1 · Consolidate — one card for the finished spec with a Document/FHIR
+     toggle (Document = rendered eCTD; FHIR = highlighted PQI Bundle). */
+  function renderConsolidated(mode) {
+    var body = mode === 'fhir'
+      ? '<pre class="modal-json cons-json">' + APIX.highlight(APIX.pqi.bundle) + '</pre>'
+      : '<div class="cons-doc">' + APIX.pqi.renderSpecHtml() + '</div>';
+    el('consolidated').innerHTML =
+      '<div class="cons-card">' +
+        '<div class="cons-top">' +
+          '<div class="cons-title">Consolidated specification — Velexa 175&nbsp;mg</div>' +
+          '<div class="seg" id="cons-seg">' +
+            '<button class="seg-btn' + (mode !== 'fhir' ? ' on' : '') + '" data-mode="doc">📄 Document</button>' +
+            '<button class="seg-btn' + (mode === 'fhir' ? ' on' : '') + '" data-mode="fhir">{ } FHIR</button>' +
+          '</div>' +
+        '</div>' +
+        '<p class="cons-change">Change in this variation: <strong>' + esc(APIX.pqi.CHANGE.label) + '</strong> — ' +
+          '<span class="diff-old">' + esc(APIX.pqi.CHANGE.before) + '</span> → <span class="diff-new">' + esc(APIX.pqi.CHANGE.after) + '</span></p>' +
+        '<div class="cons-body">' + body + '</div>' +
+      '</div>';
+  }
+  function handleConsolidate() {
+    APIX.pqi.normalize();
+    show('a-render'); show('b-formats');
+    renderConsolidated('doc');
   }
 
   /* ---- ACT 2 ------------------------------------------------------------ */
@@ -207,6 +267,79 @@
       }).join('');
   }
 
+  /* ---- conversation log (Industry ⇄ Health Authority) ------------------- */
+  /* Append one plain-language exchange line, with explicit direction and an
+     optional "view { }" peek to the underlying FHIR resource/Bundle. */
+  function convLine(dir, from, to, text, peek) {
+    el('conversation').hidden = false;
+    var row = document.createElement('div');
+    row.className = 'conv-row ' + dir;
+    row.innerHTML =
+      '<span class="conv-dir">' + from + ' <span class="conv-arrow">→</span> ' + to + '</span>' +
+      '<span class="conv-msg">' + text + '</span>' +
+      (peek ? '<button class="conv-peek peek" data-peek="' + esc(peek) + '">view { }</button>' : '');
+    el('conv-log').appendChild(row);
+    el('conv-log').scrollTop = el('conv-log').scrollHeight;
+  }
+
+  /* ---- I/O inspector (real request/response inspector) ------------------ */
+  function ioStatusClass(status) {
+    if (status >= 200 && status < 300) return 'ok';
+    if (status >= 400) return 'err';
+    return 'neu';
+  }
+  function ioHeaderRows(h) {
+    if (!h) return '';
+    var keep = ['Content-Type', 'Accept', 'If-Match', 'Location', 'ETag', 'Last-Modified', 'Authorization'];
+    var out = [];
+    Object.keys(h).forEach(function (k) {
+      for (var n = 0; n < keep.length; n++) {
+        if (k.toLowerCase() === keep[n].toLowerCase()) { out.push('<div class="io-h"><span>' + esc(k) + '</span>: ' + esc(String(h[k])) + '</div>'); break; }
+      }
+    });
+    return out.join('');
+  }
+  function ioBody(b) {
+    if (b == null) return '<div class="io-empty">(no body)</div>';
+    return '<pre class="modal-json io-json">' + APIX.highlight(b) + '</pre>';
+  }
+  function renderIoEntry(e) {
+    var st = e.response || {};
+    var cls = ioStatusClass(st.status);
+    var req = e.request || {};
+    return '<div class="io-entry" data-io="' + e.id + '">' +
+      '<button class="io-sum io-' + cls + '">' +
+        '<span class="io-method">' + esc(req.method || '') + '</span>' +
+        '<span class="io-url">' + esc(req.url || '') + '</span>' +
+        '<span class="io-arrow">→</span>' +
+        '<span class="io-status">' + esc(String(st.status || '')) + ' ' + esc(st.statusText || '') + '</span>' +
+        '<span class="io-label">' + esc(e.label || '') + '</span>' +
+      '</button>' +
+      '<div class="io-detail" hidden>' +
+        '<div class="io-sec">Request</div>' +
+        '<div class="io-line"><span class="io-k">' + esc(req.method || '') + '</span> ' + esc(req.url || '') + '</div>' +
+        ioHeaderRows(req.headers) + ioBody(req.body) +
+        '<div class="io-sec">Response</div>' +
+        '<div class="io-line"><span class="io-k">' + esc(String(st.status || '')) + '</span> ' + esc(st.statusText || '') + '</div>' +
+        ioHeaderRows(st.headers) + ioBody(st.body) +
+      '</div>' +
+    '</div>';
+  }
+  function setIoCount() { el('io-count').textContent = ioEntries.length; }
+  function setDrawer(open) {
+    ioOpen = open;
+    el('io-drawer').hidden = !open;
+    el('io-toggle').setAttribute('aria-expanded', open ? 'true' : 'false');
+    el('io-toggle').classList.toggle('on', open);
+  }
+  function addIo(detail) {
+    ioEntries.push(detail);
+    setIoCount();
+    var wrap = document.createElement('div');
+    wrap.innerHTML = renderIoEntry(detail);
+    el('io-list').appendChild(wrap.firstChild);
+  }
+
   /* ---- modal / peeks ---------------------------------------------------- */
   function openModal(html) { el('modal-body').innerHTML = html; el('modal').hidden = false; }
   function openJson(title, obj) { openModal('<h2 class="modal-title">' + esc(title) + '</h2><pre class="modal-json">' + APIX.highlight(obj) + '</pre>'); }
@@ -231,20 +364,32 @@
 
   /* ---- store events ----------------------------------------------------- */
   store.bus.addEventListener('task', function (ev) {
-    if (!el('reg').hidden && !ev.detail.firstTime) updateRegStatus(ev.detail.task);
+    if (ev.detail.firstTime) {
+      convLine('out', '🏭 SynthPharma', '🏛️ Health Authority',
+        'Submitted Type IB variation (Task created)', 'Task');
+    } else if (!el('reg').hidden) {
+      updateRegStatus(ev.detail.task);
+    }
   });
   store.bus.addEventListener('notification', function (ev) {
     lastNotif = ev.detail.bundle;
+    var msg = bizPlain(ev.detail.businessStatus);
     flyChip('🔔 ' + APIX.display('businessStatus', ev.detail.businessStatus), 'left');
+    convLine('in', '🏛️ Health Authority', '🏭 SynthPharma', '🔔 ' + esc(msg), 'notif');
     setTimeout(function () { renderTracker(ev.detail.businessStatus, ev.detail.businessStatus); }, 520);
   });
+
+  /* ---- client I/O feed (request/response inspector) --------------------- */
+  APIX.client.bus.addEventListener('io', function (ev) { addIo(ev.detail); });
 
   /* ---- reset ------------------------------------------------------------ */
   function resetAll() {
     i = 0; reviewDone = {}; reached = {}; lastNotif = null; apixDrawn = false;
+    ioEntries = [];
     store.reset();
-    ['b-sources', 'a-normalize', 'b-spec', 'a-render', 'b-formats', 'pkg', 'tracker', 'reg', 'review', 'reg-flex', 'loopnote'].forEach(function (id) { el(id).hidden = true; });
-    ['sources', 'spec', 'pkg', 'reg-docs', 'reg-outputs', 'reg-status', 'review', 'apixsteps', 'lane'].forEach(function (id) { el(id).innerHTML = ''; });
+    ['b-sources', 'a-normalize', 'b-spec', 'a-render', 'b-formats', 'pkg', 'tracker', 'reg', 'review', 'reg-flex', 'loopnote', 'conversation'].forEach(function (id) { el(id).hidden = true; });
+    ['sources', 'harmonize', 'consolidated', 'pkg', 'reg-docs', 'reg-outputs', 'reg-status', 'review', 'apixsteps', 'lane', 'conv-log', 'io-list'].forEach(function (id) { el(id).innerHTML = ''; });
+    setIoCount(); setDrawer(false);
     el('inbox-empty').hidden = false;
     el('conn').className = 'conn'; el('conn').innerHTML = '<span class="dot"></span> Not connected';
     el('view-exchange').hidden = true; el('view-author').hidden = false;
@@ -253,9 +398,14 @@
 
   /* ---- wiring ----------------------------------------------------------- */
   document.addEventListener('click', function (ev) {
+    var sum = ev.target.closest('.io-sum');
+    if (sum) { var det = sum.parentNode.querySelector('.io-detail'); if (det) det.hidden = !det.hidden; return; }
+    var m = ev.target.closest('[data-mode]'); if (m) { renderConsolidated(m.getAttribute('data-mode')); return; }
     var d = ev.target.closest('[data-doc]'); if (d) { openDoc(d.getAttribute('data-doc')); return; }
     var p = ev.target.closest('[data-peek]'); if (p) { openPeek(p.getAttribute('data-peek')); return; }
   });
+  el('io-toggle').addEventListener('click', function () { setDrawer(!ioOpen); });
+  el('io-close').addEventListener('click', function () { setDrawer(false); });
   el('stepbtn').addEventListener('click', runStep);
   el('resetbtn').addEventListener('click', resetAll);
   el('modal-close').addEventListener('click', function () { el('modal').hidden = true; });

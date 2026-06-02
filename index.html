@@ -20,6 +20,9 @@
       <li data-act="2"><span class="num">2</span><span class="lbl">Send it</span><small>APIX</small></li>
       <li data-act="3"><span class="num">3</span><span class="lbl">Review &amp; track</span><small>feedback loop</small></li>
     </ol>
+    <button class="io-toggle" id="io-toggle" aria-expanded="false">
+      <span class="io-toggle-ic">⇄</span> API calls <span class="io-count" id="io-count">0</span>
+    </button>
   </header>
 
   <main class="stage">
@@ -37,27 +40,19 @@
           <div class="sources" id="sources"></div>
         </div>
 
-        <div class="flow-arrow" id="a-normalize" hidden><span>normalize&nbsp;to&nbsp;PQI</span> ↓</div>
+        <div class="flow-arrow" id="a-normalize" hidden><span>harmonize&nbsp;via&nbsp;ConceptMap</span> ↓</div>
 
         <div class="block" id="b-spec" hidden>
-          <div class="block-label">② One structured PQI specification — every limit machine-readable</div>
-          <div id="spec"></div>
+          <div class="block-label">② Local terms harmonized to PQI controlled vocabularies + UCUM</div>
+          <div class="harmonize" id="harmonize"></div>
+          <p class="harmonize-cap">Local terms harmonized to PQI controlled vocabularies + UCUM via FHIR ConceptMap / $translate.</p>
         </div>
 
-        <div class="flow-arrow" id="a-render" hidden><span>generate&nbsp;outputs</span> ↓</div>
+        <div class="flow-arrow" id="a-render" hidden><span>consolidate</span> ↓</div>
 
         <div class="block" id="b-formats" hidden>
-          <div class="block-label">③ One source → two outputs (this is what APIX will carry)</div>
-          <div class="formats">
-            <button class="fmt fmt-pdf" data-doc="pdf">
-              <span class="fmt-ic">📄</span><span class="fmt-name">eCTD 3.2.P.5.1</span>
-              <small>human-readable PDF</small><span class="view-link">View ›</span>
-            </button>
-            <button class="fmt fmt-fhir" data-doc="fhir">
-              <span class="fmt-ic">{ }</span><span class="fmt-name">PQI FHIR Bundle</span>
-              <small>machine-readable</small><span class="view-link">View ›</span>
-            </button>
-          </div>
+          <div class="block-label">③ One consolidated specification — this is what APIX will carry</div>
+          <div id="consolidated"></div>
         </div>
       </div>
     </section>
@@ -100,8 +95,21 @@
         </div>
 
       </div>
+
+      <div class="conversation" id="conversation" hidden>
+        <div class="conv-head">Conversation · Industry ⇄ Health Authority</div>
+        <div class="conv-log" id="conv-log"></div>
+      </div>
     </section>
   </main>
+
+  <div class="io-drawer" id="io-drawer" hidden>
+    <div class="io-drawer-head">
+      <span class="io-drawer-title">⇄ API calls — request / response inspector</span>
+      <button class="io-drawer-close" id="io-close">✕</button>
+    </div>
+    <div class="io-list" id="io-list"></div>
+  </div>
 
   <footer class="controls">
     <div class="narration" id="narration"></div>

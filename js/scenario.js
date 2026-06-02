@@ -13,19 +13,19 @@ APIX.scenario = [
   {
     key: 'pull', act: 'pqi', actor: 'applicant', phase: 'Pull',
     button: 'Pull spec data from source systems',
-    narration: 'The specification lives in three systems — LIMS, the stability system, and the method repository — in three different formats. Today, a human stitches these into a Word document.',
+    narration: 'The specification lives in three systems — LIMS, the stability system, and the method repository — in three different formats, each with its own local codes. Today, a human stitches these into a Word document.',
     effect: { type: 'pull' }
   },
   {
-    key: 'normalize', act: 'pqi', actor: 'applicant', phase: 'Normalize',
-    button: 'Normalize → PQI schema',
-    narration: 'We map and normalize all of it to the HL7 PQI schema: one PlanDefinition with Release and End-of-shelf-life groups, each test an ObservationDefinition. Note the one change in this variation — the shelf-life Water Content limit.',
+    key: 'normalize', act: 'pqi', actor: 'applicant', phase: 'Harmonize',
+    button: 'Harmonize terms via ConceptMap',
+    narration: 'Each local term is harmonized to the PQI controlled vocabularies (and units to UCUM) by a FHIR ConceptMap / $translate — watch each mapping resolve live in the I/O inspector. No more bespoke spreadsheets of code crosswalks.',
     effect: { type: 'normalize' }
   },
   {
-    key: 'render', act: 'pqi', actor: 'applicant', phase: 'Render',
-    button: 'Produce both formats (PDF + FHIR)',
-    narration: 'From that single structured source we generate BOTH a human-readable eCTD 3.2.P.5.1 PDF and the machine-readable PQI FHIR Bundle. Same content, two formats.',
+    key: 'render', act: 'pqi', actor: 'applicant', phase: 'Consolidate',
+    button: 'Consolidate into one spec (Document + FHIR)',
+    narration: 'The harmonized terms consolidate into ONE structured specification. The same source is now both a human-readable eCTD 3.2.P.5.1 document and the machine-readable PQI FHIR Bundle — toggle between them. This is what APIX will carry.',
     effect: { type: 'render' }
   },
 
@@ -76,6 +76,6 @@ APIX.scenario = [
 
 /* Phase rail for the header, grouped by act. */
 APIX.acts = [
-  { id: 'pqi', label: 'PQI · author content', steps: ['Pull', 'Normalize', 'Render'] },
+  { id: 'pqi', label: 'PQI · author content', steps: ['Pull', 'Harmonize', 'Consolidate'] },
   { id: 'apix', label: 'APIX · exchange & track', steps: ['Connect', 'Stream · Describe · Orchestrate', 'Subscribe', 'Track'] }
 ];
