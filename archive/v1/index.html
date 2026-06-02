@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>APIX Live — Pharmaceutical Quality Variation Demo</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">APIX</div>
+      <div class="brand-text">
+        <h1>API Exchange for Medicinal Products</h1>
+        <p>From scattered data to a tracked regulatory submission — live</p>
+      </div>
+    </div>
+    <ol class="stepper" id="stepper">
+      <li data-act="1"><span class="num">1</span><span class="lbl">Author the content</span><small>PQI</small></li>
+      <li data-act="2"><span class="num">2</span><span class="lbl">Send it</span><small>APIX</small></li>
+      <li data-act="3"><span class="num">3</span><span class="lbl">Review &amp; track</span><small>feedback loop</small></li>
+    </ol>
+  </header>
+
+  <main class="stage">
+
+    <!-- ========================= ACT 1 — AUTHOR ========================= -->
+    <section class="view" id="view-author">
+      <div class="vhead">
+        <h2>Author the change once — as structured data</h2>
+        <p class="vsub">A routine <strong>Type IB variation</strong> for <strong>Velexa 175&nbsp;mg film-coated tablets</strong>: tighten one shelf-life limit.</p>
+      </div>
+
+      <div class="author-flow">
+        <div class="block" id="b-sources" hidden>
+          <div class="block-label">① Today the spec is scattered across systems, in different formats</div>
+          <div class="sources" id="sources"></div>
+        </div>
+
+        <div class="flow-arrow" id="a-normalize" hidden><span>normalize&nbsp;to&nbsp;PQI</span> ↓</div>
+
+        <div class="block" id="b-spec" hidden>
+          <div class="block-label">② One structured PQI specification — every limit machine-readable</div>
+          <div id="spec"></div>
+        </div>
+
+        <div class="flow-arrow" id="a-render" hidden><span>generate&nbsp;outputs</span> ↓</div>
+
+        <div class="block" id="b-formats" hidden>
+          <div class="block-label">③ One source → two outputs (this is what APIX will carry)</div>
+          <div class="formats">
+            <button class="fmt fmt-pdf" data-doc="pdf">
+              <span class="fmt-ic">📄</span><span class="fmt-name">eCTD 3.2.P.5.1</span>
+              <small>human-readable PDF</small><span class="view-link">View ›</span>
+            </button>
+            <button class="fmt fmt-fhir" data-doc="fhir">
+              <span class="fmt-ic">{ }</span><span class="fmt-name">PQI FHIR Bundle</span>
+              <small>machine-readable</small><span class="view-link">View ›</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= ACT 2 & 3 — EXCHANGE (shared) ================== -->
+    <section class="view" id="view-exchange" hidden>
+      <div class="exchange">
+
+        <!-- Applicant -->
+        <div class="party">
+          <div class="party-head"><span class="ph-ic">🏭</span><span>SynthPharma&nbsp;AG</span><small>Applicant</small></div>
+          <div class="conn" id="conn"><span class="dot"></span> Not connected</div>
+          <div class="pkg" id="pkg" hidden></div>
+          <div class="tracker" id="tracker" hidden></div>
+        </div>
+
+        <!-- APIX channel -->
+        <div class="channel">
+          <div class="channel-label">APIX · FHIR R5 API</div>
+          <div class="apix-steps" id="apixsteps"></div>
+          <div class="lane" id="lane"></div>
+          <div class="loop-note" id="loopnote" hidden>🔁 <strong>FHIR Subscription</strong><br>Every status change is pushed back automatically — no polling, no email.</div>
+        </div>
+
+        <!-- Regulator -->
+        <div class="party">
+          <div class="party-head"><span class="ph-ic">🏛️</span><span>Health&nbsp;Authority</span><small>Regulator</small></div>
+          <div class="inbox-empty" id="inbox-empty">📥 Inbox empty — awaiting submission</div>
+          <div class="reg" id="reg" hidden>
+            <div class="reg-status" id="reg-status"></div>
+            <div class="reg-docs" id="reg-docs"></div>
+            <div class="review" id="review" hidden></div>
+            <div class="reg-flex" id="reg-flex" hidden>
+              <div class="flex-q">How does the reviewer read the specification?</div>
+              <button data-doc="pdf">📄 Open the PDF</button>
+              <button data-doc="validate" class="btn-accent">✓ Check the structured data</button>
+            </div>
+            <div class="reg-outputs" id="reg-outputs"></div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+  </main>
+
+  <footer class="controls">
+    <div class="narration" id="narration"></div>
+    <div class="ctl-buttons">
+      <span id="progress" class="progress"></span>
+      <button id="resetbtn" class="btn-ghost">Reset</button>
+      <button id="stepbtn" class="btn-primary">▶</button>
+    </div>
+  </footer>
+
+  <div id="modal" class="modal" hidden>
+    <div class="modal-box">
+      <button id="modal-close" class="modal-close">✕</button>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <script src="js/highlight.js"></script>
+  <script src="js/codesystems.js"></script>
+  <script src="js/seed.js"></script>
+  <script src="js/pqi.js"></script>
+  <script src="js/scenario.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
