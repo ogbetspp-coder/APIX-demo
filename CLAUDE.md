@@ -83,7 +83,10 @@ Turning the scripted demo into an interactive sandbox. Pillars:
 4. **Audit + analytics** — `Provenance` per change + end-of-run cycle-time chart.
 
 Under the hood: Task state machine + branching, `localStorage` persistence,
-expanded tests. **Scope for the current iteration: _to confirm with user_.**
+expanded tests. **Scope for the current iteration (see `PLAN.md`):
+(A) ConceptMap-driven authoring + consolidated Document⇄FHIR toggle,
+(B) Mock FHIR server + real I/O with live-HAPI seam,
+(C) a spelled-out Industry⇄Health-Authority conversation.**
 
 ## Standards references
 - APIX IG — https://build.fhir.org/ig/HL7/APIX---API-Exchange-for-Medicinal-Products/
