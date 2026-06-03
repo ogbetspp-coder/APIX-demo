@@ -56,6 +56,7 @@ APIX.CS = {
     'validation-failed': 'Validation Failed',
     'under-assessment': 'Under Assessment',
     'clock-stop': 'Clock Stop',
+    'clock-restart': 'Clock Restart',
     'decision-pending': 'Decision Pending',
     'approved': 'Approved',
     'rejected': 'Rejected'

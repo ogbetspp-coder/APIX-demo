@@ -44,6 +44,7 @@ APIX.store = {
   token: null,
   task: null,
   taskUrl: null,          // public URL of the server-created Task (live mode)
+  conformance: null,      // last $validate OperationOutcome (conformance check)
   submissionInputs: [],
   provenance: [],         // ordered in-memory audit log (21 CFR Part 11 / ALCOA)
   _provSeq: 0,
@@ -255,6 +256,7 @@ APIX.store = {
     this.token = null;
     this.task = null;
     this.taskUrl = null;
+    this.conformance = null;
     this.submissionInputs = [];
     this.provenance = [];
     this._provSeq = 0;
@@ -424,10 +426,14 @@ APIX.store = {
       this.taskUrl = (APIX.config.activeBase ? APIX.config.activeBase() : APIX.config.hapiBase) + '/Task/' + stored.id;
     }
 
-    // Live: run a REAL $validate so HAPI's OperationOutcome shows in the inspector.
-    if (this._isLive()) {
-      await APIX.client.validate(this.task);
-    }
+    // Conformance check (AUTOMATIC, in-flight) — FHIR `$validate` → OperationOutcome
+    // (format/profile conformance, NOT a human act; see docs/REGULATORY-FLOW.md).
+    // Live: a REAL HAPI $validate. Mock: the in-process server returns an
+    // informational OperationOutcome. Either way the result is surfaced in
+    // Inspect and stored so the UI can show a sober "Conformance ✓" tag.
+    try {
+      this.conformance = await APIX.client.validate(this.task);
+    } catch (e) { this.conformance = null; }
 
     // Notify the regulator (owner) -> populate its console. (The status-change
     // Subscription is registered later, in subscribe(); it drives Act 3.)
@@ -525,6 +531,12 @@ APIX.store = {
     // the action is self-describing; still a valid apix-task-code coding.
     if (effect.taskCode) {
       this.task.code = { coding: [{ system: APIX.SYS.taskCode, code: effect.taskCode, display: APIX.display('taskCode', effect.taskCode) }] };
+    }
+
+    // A Reject decision records why on Task.statusReason (CodeableConcept). The
+    // text is the human grounds; the businessStatus already says 'rejected'.
+    if (effect.statusReason) {
+      this.task.statusReason = { text: effect.statusReason };
     }
 
     if (effect.addProcedureNo) {

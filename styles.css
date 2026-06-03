@@ -194,6 +194,24 @@ code, pre, .mono { font-family: Consolas, "Lucida Console", "Courier New", monos
 .doc-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .doc-size { color: var(--ink-soft); font-size: 10.5px; font-family: Consolas, monospace; }
 
+/* ---------- automatic in-flight chain (conformance / received / validated) ---------- */
+/* The conformance tag on the landed payload, and the regulator's auto-summary.
+   Sober green when satisfied, never shouty — these are automatic, not human acts. */
+.conf-line { margin: 2px 0 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.conf-tag { font-size: 11px; font-weight: 700; border-radius: var(--radius); padding: 2px 8px;
+  border: 1px solid var(--line); }
+.conf-ok { color: var(--green); background: var(--green-bg); border-color: #c3ddc4; }
+.conf-err { color: #fff; background: var(--red); border-color: var(--red); }
+.conf-note { font-size: 11px; color: var(--ink-soft); font-family: Consolas, monospace; }
+.lbl-auto { font-weight: 600; color: var(--green); background: var(--green-bg); border: 1px solid #c3ddc4;
+  border-radius: 999px; padding: 0 7px; font-size: 9.5px; letter-spacing: .3px; margin-left: 6px; text-transform: none; }
+.reg-auto { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0 4px;
+  padding: 8px 10px; background: var(--green-bg); border: 1px solid #c3ddc4; border-radius: var(--radius); }
+.reg-auto-lbl { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px;
+  color: var(--green); margin-right: auto; }
+.auto-tag { font-size: 11.5px; color: var(--ink-soft); }
+.auto-tag.on { color: var(--green); font-weight: 700; }
+
 /* ---------- Health Authority — received / review ---------- */
 .reg-status { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px;
   background: var(--bg-alt); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; }

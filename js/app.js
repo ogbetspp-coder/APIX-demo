@@ -6,7 +6,7 @@
  * is unchanged; this file only renders it. Layout:
  *   - STATUS SPINE  : Draft → Submitted → Received → Validated → Assessing → Decision
  *   - INDUSTRY pane : workflow ① Author ② Submit (· Send answers) + spec/track
- *   - HA pane       : workflow ① Validate ② Decision + received/review
+ *   - HA pane       : workflow ① Assess ② Decision + received/review
  *   - FOOTER        : tiny progress + Reset (no global driver)
  *   - INSPECT       : focus resource/request + running 'io' call list
  *
@@ -18,16 +18,25 @@
  * PASSES THE TURN: a brief "Subscription notification →" cue crosses between the
  * panes and lights up the other side's next button.
  *
- * Flow: Author → Submit → (Regulator auto-"Received") → Validate → Decision.
- *   Request information → clock-stop, turn → Industry "Send answers" → clock
- *   restart, turn → Regulator Decision. Approve / Reject → terminal Summary.
+ * Realism anchor: docs/REGULATORY-FLOW.md. THREE distinct "validations":
+ *   1. Conformance check — FHIR $validate → OperationOutcome (AUTOMATIC, in-flight).
+ *   2. Administrative validation — completeness/eligibility (AUTOMATIC/quick) →
+ *      validation-successful.
+ *   3. Scientific assessment — the assessor's HUMAN review → under-assessment
+ *      (this is where the structured acceptance-criteria FAIL/PASS belongs).
+ *
+ * Flow: Author → Submit → [AUTO chain: $validate (conformance ✓) · received ·
+ *   validation-successful] → Regulator ASSESS (human) → Decide. There is NO
+ *   manual "Validate" regulator button. Decision branch: Request for
+ *   Supplementary Information (RSI) → clock-stop, turn → Industry "Send answers"
+ *   → clock-restart, turn → Regulator Decide. Approve / Reject → terminal Summary.
  */
 (function () {
   var store = APIX.store;
 
   /* ---- Per-side workflow state machine ---------------------------------- *
    * `turn`  = the side whose action is live ('ind' | 'ha' | null at terminal)
-   * `phase` = the live step key (author | submit | validate | decision |
+   * `phase` = the live step key (author | submit | assess | decision |
    *           answers | done)
    * `done`  = step key -> true once completed (renders a check)             */
   var turn = 'ind';
@@ -44,7 +53,7 @@
     { key: 'answers', label: 'Send answers', button: 'Send answers', conditional: true }
   ];
   var HA_FLOW = [
-    { key: 'validate', label: 'Validate', button: 'Validate' },
+    { key: 'assess', label: 'Assess', button: 'Assess' },
     { key: 'decision', label: 'Decision', button: null }   // renders the 3 decision buttons
   ];
 
@@ -74,7 +83,7 @@
   function spineCurrent() {
     switch (phase) {
       case 'author': case 'submit': return 'draft';
-      case 'validate': return 'validation-successful';
+      case 'assess': return 'under-assessment';
       case 'decision': case 'answers': return 'decision';
       default: return 'decision';
     }
@@ -121,7 +130,7 @@
         body = '<div class="fl-label">' + esc(step.label) + '</div>' +
           '<div class="decision-btns" id="decision-btns">' +
             '<button class="dec-btn dec-approve" data-decision="approve">Approve</button>' +
-            '<button class="dec-btn dec-info" data-decision="info"' + (infoAsked ? ' disabled' : '') + '>Request information</button>' +
+            '<button class="dec-btn dec-info" data-decision="info"' + (infoAsked ? ' disabled' : '') + ' title="Request for Supplementary Information (RSI)">Request information (RSI)</button>' +
             '<button class="dec-btn dec-reject" data-decision="reject">Reject</button>' +
           '</div>';
       } else {
@@ -220,19 +229,22 @@
         passTurn('author', 'submit', 'ind');           // same side, no notification
       } else if (key === 'submit') {
         await handleSubmit();
-        // Submit → Task created + auto-"Received" by the Regulator. The receipt
-        // notification crosses to the Regulator, lighting up its Validate.
-        passTurn('submit', 'validate', 'ha', 'ha', 'Received');
-      } else if (key === 'validate') {
-        await handleValidate();
-        // Validate is the Regulator's own action; the turn stays on the HA side,
-        // advancing to its Decision (no cross-pane notification).
-        passTurn('validate', 'decision', 'ha');
+        // Submit → Task created, then the AUTOMATIC transport/server chain ran:
+        // $validate (conformance ✓) → received → validation-successful. The
+        // payload lands on the Regulator already conformant, received, and
+        // administratively validated. The turn passes to the Regulator's human
+        // Assess (the spine has already advanced through Validated).
+        passTurn('submit', 'assess', 'ha', 'ha', 'Validated (auto)');
+      } else if (key === 'assess') {
+        await handleAssess();
+        // Assess is the Regulator's own human action; the turn stays on the HA
+        // side, advancing to its Decision (no cross-pane notification).
+        passTurn('assess', 'decision', 'ha');
       } else if (key === 'answers') {
         await handleAnswers();
         // Clock restarts; the response notification crosses back to the
         // Regulator's Decision.
-        passTurn('answers', 'decision', 'ha', 'ha', 'Under assessment');
+        passTurn('answers', 'decision', 'ha', 'ha', 'Clock Restart');
       }
     } catch (e) {
       flashError('Step failed');
@@ -372,10 +384,62 @@
     await store.subscribe();
     if (!reached['submitted']) reached['submitted'] = new Date();
 
-    // The payload lands on the HA pane automatically: acknowledge receipt and
-    // advance the spine Submitted → Received without a separate user click.
+    // ---- AUTOMATIC transport/server chain (no human action) -----------------
+    // Per docs/REGULATORY-FLOW.md, three things happen to the payload in-flight,
+    // each surfaced on the feed with a brief visible delay so the spine advances
+    // calmly. None of these is a button.
+    //
+    //  (a) Conformance check — the $validate OperationOutcome was already produced
+    //      inside store.submit() (real HAPI $validate live; mock server returns an
+    //      informational OperationOutcome). Surface a sober "Conformance ✓" tag.
+    renderConformance();
+    feed('Conformance ✓ — $validate OperationOutcome', 'conformance');
+
+    //  (b) Acknowledgement of receipt — Task → received. Spine → Received.
+    await delay(420);
     await store.updateTask({ type: 'updateTask', status: 'received', businessStatus: 'received', addProcedureNo: true, addOutputs: ['ack'] });
     revealRegulator();
+
+    //  (c) Administrative validation (completeness/eligibility — fast, mechanical)
+    //      → validation-successful. Spine → Validated (auto). NOT scientific review.
+    await delay(560);
+    await store.updateTask({ type: 'updateTask', status: 'accepted', businessStatus: 'validation-successful', addOutputs: ['validation'], flexibility: true });
+    revealRegulator();
+  }
+
+  /* Brief presenter-paced delay so the automatic chain advances the spine calmly
+     rather than snapping through every node at once. Instant if reduced-motion. */
+  function delay(ms) {
+    return new Promise(function (resolve) { setTimeout(resolve, ms); });
+  }
+
+  /* The conformance check is automatic and in-flight. Render a small sober
+     "Conformance ✓" tag on the landed payload, linked to the real $validate
+     OperationOutcome in Inspect. Reflects an actual OperationOutcome severity. */
+  function renderConformance() {
+    var oo = store.conformance;
+    var sev = ooSeverity(oo);
+    var ok = sev !== 'error';
+    var tag = '<span class="conf-tag' + (ok ? ' conf-ok' : ' conf-err') + '">' +
+      (ok ? 'Conformance ✓' : 'Conformance ✗') +
+      '</span> <span class="conf-note">automatic · $validate</span>' +
+      ' <button class="link-btn" data-inspect="conformance">view OperationOutcome</button>';
+    var pkgHead = el('pkg') && el('pkg').querySelector('.pkg-head');
+    if (pkgHead && !pkgHead.querySelector('.conf-tag')) {
+      var div = document.createElement('div');
+      div.className = 'conf-line';
+      div.innerHTML = tag;
+      el('pkg').insertBefore(div, pkgHead.nextSibling);
+    }
+  }
+
+  /* Coarsest severity in an OperationOutcome ('error' | 'warning' | 'information'). */
+  function ooSeverity(oo) {
+    if (!oo || !oo.issue || !oo.issue.length) return 'information';
+    var sevs = oo.issue.map(function (i) { return i.severity; });
+    if (sevs.indexOf('fatal') >= 0 || sevs.indexOf('error') >= 0) return 'error';
+    if (sevs.indexOf('warning') >= 0) return 'warning';
+    return 'information';
   }
 
   function verifyLinkHtml() {
@@ -399,8 +463,8 @@
      and restarts the clock (clock-stop → under-assessment), returning the turn
      to the Regulator's Decision. */
   async function handleAnswers() {
-    await store.updateTask({ type: 'updateTask', status: 'in-progress', businessStatus: 'under-assessment', taskCode: 'response-to-questions' });
-    feed('Answered list of questions', 'notif');
+    await store.updateTask({ type: 'updateTask', status: 'in-progress', businessStatus: 'clock-restart', taskCode: 'response-to-questions' });
+    feed('Responded to RSI — Clock Restart', 'notif');
     revealRegulator();
   }
 
@@ -409,8 +473,27 @@
     if (!store.task) return;
     hide('ha-empty');
     show('ha-content');
-    el('reg-docs').innerHTML = '<div class="payload-head">Received documents</div>' + docsHtml(store.task.input);
+    el('reg-docs').innerHTML = '<div class="payload-head">Received documents</div>' + docsHtml(store.task.input) + regAutoHtml();
     updateRegStatus(store.task);
+  }
+
+  /* The automatic-chain summary on the Regulator's Received view: the payload
+     arrived conformant, received, and administratively validated — all without a
+     human action. Each tag reflects state actually reached. */
+  function regAutoHtml() {
+    if (!store.task) return '';
+    var ok = ooSeverity(store.conformance) !== 'error';
+    var rec = !!reached['received'];
+    var val = !!reached['validation-successful'];
+    function tag(on, label, key) {
+      return '<span class="auto-tag' + (on ? ' on' : '') + '">' + (on ? '✓ ' : '') + esc(label) + '</span>' +
+        (key ? ' <button class="link-btn" data-inspect="' + esc(key) + '">view</button>' : '');
+    }
+    return '<div class="reg-auto"><span class="reg-auto-lbl">Automatic on receipt</span>' +
+      tag(ok, 'Conformant', 'conformance') +
+      tag(rec, 'Received') +
+      tag(val, 'Administratively validated') +
+      '</div>';
   }
 
   function updateRegStatus(task) {
@@ -428,19 +511,18 @@
     }
   }
 
-  /* ============================ HA ① Validate ============================ */
-  /* Validate — the regulator's first action: PUT the Task to
-     validation-successful (with the validation-report output), reveal the Review
-     block (Good/Bad batch teeth), then pass the turn to its own Decision. */
-  async function handleValidate() {
-    await store.updateTask({ type: 'updateTask', status: 'accepted', businessStatus: 'validation-successful', addOutputs: ['validation'], flexibility: true });
+  /* ============================ HA ① Assess ============================= */
+  /* Assess — the regulator's HUMAN scientific/technical content review. This is
+     the THIRD, distinct "validation": NOT the automatic conformance check, NOT
+     the automatic administrative validation — it is the assessor reading the
+     structured spec. It reveals the acceptance-criteria (Good/Bad batch) teeth
+     and moves the Task to under-assessment. (Conformance + received +
+     validation-successful already happened automatically on Submit.) */
+  async function handleAssess() {
+    await store.updateTask({ type: 'updateTask', status: 'in-progress', businessStatus: 'under-assessment' });
     revealRegulator();
     show('ha-review');
     renderValidation();   // machine-check the tested batch against the structured criteria
-
-    // under-assessment immediately, so the spine reflects the Decision phase.
-    await store.updateTask({ type: 'updateTask', status: 'in-progress', businessStatus: 'under-assessment' });
-    revealRegulator();
   }
 
   /* Review — read the spec, validate the structured data with Good/Bad teeth. */
@@ -494,7 +576,7 @@
         crossNotification('ind', 'Approved');
         finishDecision();
       } else if (kind === 'reject') {
-        await store.updateTask({ type: 'updateTask', status: 'completed', businessStatus: 'rejected', taskCode: 'rejection', addOutputs: ['rejection'] });
+        await store.updateTask({ type: 'updateTask', status: 'completed', businessStatus: 'rejected', taskCode: 'rejection', addOutputs: ['rejection'], statusReason: 'Acceptance criteria not met on the tested batch (out of specification).' });
         done.decision = true;
         crossNotification('ind', 'Rejected');
         finishDecision();
@@ -503,8 +585,8 @@
         await store.updateTask({ type: 'updateTask', status: 'on-hold', businessStatus: 'clock-stop', taskCode: 'information-request' });
         infoAsked = true;
         revealRegulator();
-        // The clock-stop crosses to Industry; its "Send answers" lights up.
-        passTurn(null, 'answers', 'ind', 'ind', 'List of questions');
+        // Clock Stop. The RSI crosses to Industry; its "Send answers" lights up.
+        passTurn(null, 'answers', 'ind', 'ind', 'Clock Stop · RSI');
       }
     } catch (e) {
       flashError('Decision failed');
@@ -569,6 +651,7 @@
   }
   function inspectKey(key) {
     if (key === 'task') inspectFocus('Task — Type IB variation', store.task);
+    else if (key === 'conformance') inspectFocus('Conformance check — $validate OperationOutcome (automatic)', store.conformance || { resourceType: 'OperationOutcome', issue: [] });
     else if (key === 'notif') inspectFocus('Subscription notification Bundle', lastNotif);
     else if (key === 'fhir') inspectFocus('PQI FHIR Bundle', APIX.pqi.bundle || APIX.pqi.normalize());
     else if (key.indexOf('prov:') === 0) {
@@ -760,7 +843,24 @@
     'voluntary / for-comment, not mandatory) · <strong>eCTD v4.0 two-way comms = planned</strong> · ' +
     '<strong>APIX = pre-ballot</strong> (IG v0.1.0). This demo shows the transport half in FHIR — never "FDA\'s plan."</div>' +
 
-    '<div class="inspect-sec" style="border-top:none">Where this fits at FDA</div>' +
+    '<div class="inspect-sec" style="border-top:none">Three distinct &ldquo;validations&rdquo;</div>' +
+    '<p class="muted">The word &ldquo;validation&rdquo; means three different things in this exchange. ' +
+    'Only the third is a human act; the first two are automatic and in-flight (see ' +
+    '<code>docs/REGULATORY-FLOW.md</code>).</p>' +
+    '<table class="val-table about-table"><thead><tr><th>Step</th><th>What it is</th></tr></thead><tbody>' +
+    '<tr><td><strong>Conformance check</strong> <em>(automatic)</em></td>' +
+      '<td>FHIR <code>$validate</code> &rarr; <code>OperationOutcome</code> &mdash; format/profile conformance of the payload as it is submitted. Not a human act.</td></tr>' +
+    '<tr><td><strong>Administrative validation</strong> <em>(automatic / fast)</em></td>' +
+      '<td>The authority&rsquo;s completeness + correct-classification / eligibility check &mdash; fast, largely mechanical &rarr; <code>validation-successful</code>.</td></tr>' +
+    '<tr><td><strong>Scientific assessment</strong> <em>(human)</em></td>' +
+      '<td>The assessor&rsquo;s review of the structured acceptance-criteria (good/bad batch) &rarr; <code>under-assessment</code>. The Regulator&rsquo;s <strong>Assess</strong> button.</td></tr>' +
+    '</tbody></table>' +
+    '<p class="muted">Type IB realism: EMA issues a single <strong>Request for Supplementary Information (RSI)</strong>, ' +
+    'not a formal Type II clock-stop. The APIX IG&rsquo;s own Type IB example uses <code>clock-stop</code>/<code>clock-restart</code> ' +
+    'businessStatus, so we keep those authoritative codes but label the branch RSI. The <code>apix-business-status</code> ' +
+    'CodeSystem is <strong>draft</strong> and APIX v0.1.0 is <strong>pre-ballot</strong>.</p>' +
+
+    '<div class="inspect-sec">Where this fits at FDA</div>' +
     '<table class="val-table about-table"><thead><tr><th>FDA anchor</th><th>Alignment</th></tr></thead><tbody>' +
     '<tr><td><strong>PQ-CMC FHIR IG</strong> (FDA-funded, R5, eCTD Module 3)</td>' +
       '<td>Same FHIR R5, same BR&amp;R work group, same structured-spec model as FDA\'s own IG. ' +

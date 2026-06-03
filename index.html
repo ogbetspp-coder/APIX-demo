@@ -101,16 +101,16 @@
             <!-- Per-side workflow (the driver for this pane) -->
             <ol class="flow" id="ha-flow" aria-label="Regulator workflow"></ol>
 
-            <!-- ① Received -->
+            <!-- Received (auto): payload landed conformant, received, admin-validated -->
             <div class="stage-block" id="ha-received">
-              <div class="block-label">① Received</div>
+              <div class="block-label">Received <span class="lbl-auto">automatic</span></div>
               <div class="reg-status" id="reg-status"></div>
               <div id="reg-docs"></div>
             </div>
 
-            <!-- ② Review -->
+            <!-- ① Assess (human scientific/technical content review) -->
             <div class="stage-block" id="ha-review" hidden>
-              <div class="block-label">② Review</div>
+              <div class="block-label">① Assess — acceptance-criteria check</div>
               <div class="batch-toggle" id="batch-toggle">
                 <span class="batch-lbl">Tested batch</span>
                 <button class="batch-opt on" id="batch-good" data-batch="good">Good batch</button>
