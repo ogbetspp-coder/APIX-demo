@@ -13,7 +13,7 @@
       <div class="logo">APIX</div>
       <div class="brand-text">
         <h1>HL7 Vulcan · APIX × PQI</h1>
-        <p>Structured pharmaceutical quality content, carried over FHIR R5</p>
+        <p>PQI content · APIX FHIR R5 transport</p>
       </div>
     </div>
     <div class="header-tools">
@@ -49,7 +49,7 @@
 
           <!-- ① Author -->
           <div class="stage-block" id="ind-author" hidden>
-            <div class="block-label">① Author — harmonize local terms</div>
+            <div class="block-label">① Author</div>
             <div class="harmonize" id="harmonize"></div>
           </div>
 
@@ -65,13 +65,13 @@
 
           <!-- ② Submit (the one payload, after submit) -->
           <div class="stage-block" id="ind-pkg" hidden>
-            <div class="block-label">② Submitted — payload carried by APIX</div>
+            <div class="block-label">② Submitted</div>
             <div id="pkg"></div>
           </div>
 
           <!-- ③ Track (quiet activity feed) -->
           <div class="stage-block" id="ind-track" hidden>
-            <div class="block-label">③ Track — real-time activity</div>
+            <div class="block-label">③ Track</div>
             <div class="feed" id="feed"></div>
           </div>
 
@@ -99,7 +99,7 @@
 
             <!-- ② Review -->
             <div class="stage-block" id="ha-review" hidden>
-              <div class="block-label">② Review the specification</div>
+              <div class="block-label">② Review</div>
               <div class="batch-toggle" id="batch-toggle">
                 <span class="batch-lbl">Tested batch</span>
                 <button class="batch-opt on" id="batch-good" data-batch="good">Good batch</button>
@@ -114,7 +114,7 @@
 
             <!-- ③ Decide -->
             <div class="stage-block" id="ha-decide" hidden>
-              <div class="block-label">③ Decide — Approve, Request information, or Reject</div>
+              <div class="block-label">③ Decide</div>
               <div class="decide-hint" id="decide-hint"></div>
               <div class="decision-btns" id="decision-btns">
                 <button class="dec-btn dec-approve" data-decision="approve">Approve</button>
@@ -152,9 +152,7 @@
       <div class="inspect-focus" id="inspect-focus"></div>
       <div class="inspect-sec" id="audit-sec" hidden>Audit trail
         <span class="audit-count" id="audit-count">0</span></div>
-      <div class="audit-note" id="audit-note" hidden>Audit trail by design — FHIR
-        <code>Provenance</code> + resource versioning give the who / what / when / why
-        FDA's data-integrity guidance requires (21 CFR Part 11 / ALCOA).</div>
+      <div class="audit-note" id="audit-note" hidden><code>Provenance</code> · 21 CFR Part 11 / ALCOA</div>
       <div class="audit-wrap" id="audit-wrap" hidden></div>
       <div class="inspect-sec">API calls</div>
       <div class="io-list" id="io-list"></div>

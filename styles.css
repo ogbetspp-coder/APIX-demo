@@ -161,6 +161,8 @@ code, pre, .mono { font-family: Consolas, "Lucida Console", "Courier New", monos
 .seg-btn:not(.on):hover { background: var(--bg-alt); }
 .cons-change { margin: 0 0 12px; font-size: 12.5px; color: var(--ink); background: var(--amber-bg);
   padding: 9px 12px; border-radius: var(--radius); border-left: 3px solid var(--amber); }
+.chg-tag { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px;
+  color: var(--ink-soft); margin-right: 6px; }
 .spec-table { width: 100%; font-size: 12.5px; }
 .spec-table th, .spec-table td { padding: 6px 9px; border: 1px solid var(--line); text-align: left; vertical-align: top; }
 .spec-table th { background: var(--th-bg); font-weight: 700; font-size: 11px; }

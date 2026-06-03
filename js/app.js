@@ -141,7 +141,7 @@
       }
       if (!decisionPending) i += 1;
     } catch (e) {
-      flashError('Step failed: ' + (e && e.message ? e.message : String(e)));
+      flashError('Step failed');
     } finally {
       inFlight = false;
       btn.classList.remove('busy');
@@ -205,7 +205,7 @@
           '<td>' + esc(r.test) + '</td><td>' + esc(r.release) + '</td><td>' + shelf + '</td></tr>';
       }).join('');
       body =
-        '<p class="cons-change">Change in this variation: <strong>' + esc(APIX.pqi.CHANGE.label) + '</strong> — ' +
+        '<p class="cons-change"><span class="chg-tag">Change</span> <strong>' + esc(APIX.pqi.CHANGE.label) + '</strong> ' +
           '<span class="diff-old">' + esc(APIX.pqi.CHANGE.before) + '</span> → <span class="diff-new">' + esc(APIX.pqi.CHANGE.after) + '</span></p>' +
         '<table class="grid spec-table"><thead><tr><th>Test</th><th>Release</th><th>End of shelf life</th></tr></thead>' +
           '<tbody>' + rows + '</tbody></table>';
@@ -238,11 +238,11 @@
     var t = store.task;
     show('ind-pkg');
     el('pkg').innerHTML =
-      '<div class="pkg-head">' + t.input.length + ' document carried by APIX ' +
+      '<div class="pkg-head">' + t.input.length + ' document ' +
         '<button class="link-btn" data-inspect="task">view Task</button>' + verifyLinkHtml() + '</div>' +
       docsHtml(t.input);
     show('ind-track');
-    feed('Submitted — Task created and delivered to the Health Authority.');
+    feed('Submitted');
 
     await store.subscribe();
     if (!reached['submitted']) reached['submitted'] = new Date();
@@ -340,11 +340,10 @@
         (v.pass ? 'PASS' : 'FAIL') + '</td></tr>';
     }).join('');
     var banner = anyFail
-      ? '<div class="val-banner val-banner-fail">OUT OF SPECIFICATION — acceptance criterion breached</div>' +
-        '<p class="val-punch">In the 300-page PDF this is buried; in the structured spec the acceptance criterion is <strong>machine-checked — caught at submit.</strong></p>'
-      : '<div class="val-banner val-banner-pass">All acceptance criteria met</div>';
+      ? '<div class="val-banner val-banner-fail">OUT OF SPECIFICATION</div>'
+      : '<div class="val-banner val-banner-pass">All criteria met</div>';
     el('review-result').innerHTML =
-      '<div class="val-sub">' + esc(batchLabel) + ' vs. acceptance criteria</div>' +
+      '<div class="val-sub">' + esc(batchLabel) + '</div>' +
       banner +
       '<table class="val-table"><thead><tr><th>Test</th><th>Criterion</th><th>Measured</th><th>Result</th></tr></thead>' +
         '<tbody>' + rows + '</tbody></table>';
@@ -376,11 +375,11 @@
         await store.updateTask({ type: 'updateTask', status: 'on-hold', businessStatus: 'clock-stop', taskCode: 'information-request' });
         await store.updateTask({ type: 'updateTask', status: 'in-progress', businessStatus: 'under-assessment', taskCode: 'response-to-questions' });
         infoRoundDone = true;
-        decideHint('Clock restarted — choose a final decision: Approve or Reject.');
+        decideHint('Clock restarted');
         setDecisionBtns(true);
       }
     } catch (e) {
-      decideHint('Decision failed: ' + (e && e.message ? e.message : String(e)));
+      decideHint('Decision failed');
       setDecisionBtns(true);
     } finally {
       inFlight = false;
@@ -425,22 +424,9 @@
     var totalMs = (first && last) ? (last - first) : null;
     el('summary').hidden = false;
     el('summary').innerHTML =
-      '<div class="sum-head">Cycle time — this run\'s real timestamps</div>' +
+      '<div class="sum-head">Cycle time</div>' +
       '<div class="ct-bars">' + rowsHtml + '</div>' +
-      '<div class="ct-total">Total (submit → decision): <strong>' + (totalMs != null ? esc(fmtElapsed(totalMs)) : '—') + '</strong>' +
-        ' <span class="ct-baseline">vs. a typical manual variation measured in <em>weeks</em></span></div>' +
-      '<ul class="adopt-list">' +
-        '<li>One structured spec, carried as both a human PDF and machine-readable FHIR over the same rails — ' +
-          '<strong>PQI / PQ-CMC authors the content; APIX is the FHIR R5 transport.</strong></li>' +
-        '<li>This Water-Content tightening is a <strong>computable ICH Q12 Established-Condition change</strong> — ' +
-          'old range → new range on a named, coded test — the structured input a KASA-style assessment consumes. ' +
-          'Velexa is a Solid Oral Dosage Form, inside PQ-CMC\'s current scope.</li>' +
-        '<li>Acceptance criteria are machine-checked at submit — out-of-spec is caught immediately, not buried in a PDF.</li>' +
-        '<li>Every status change is pushed, timestamped, and recorded as a FHIR <code>Provenance</code> — ' +
-          'the who / what / when / why audit trail (21 CFR Part 11 / ALCOA) by design.</li>' +
-        '<li>Same FHIR R5, same BR&amp;R structured-spec model as the FDA-funded PQ-CMC IG: ' +
-          '<strong>directional alignment with FDA\'s stated direction</strong> — the transport half, in FHIR.</li>' +
-      '</ul>';
+      '<div class="ct-total">Total: <strong>' + (totalMs != null ? esc(fmtElapsed(totalMs)) : '—') + '</strong></div>';
     el('summary').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 
@@ -572,7 +558,7 @@
   store.bus.addEventListener('notification', function (ev) {
     lastNotif = ev.detail.bundle;
     var code = ev.detail.businessStatus;
-    var msg = 'Status → ' + APIX.display('businessStatus', code);
+    var msg = APIX.display('businessStatus', code);
     feed(msg, 'notif');
     setTimeout(function () {
       reached[code] = new Date();
