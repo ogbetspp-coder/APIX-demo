@@ -23,6 +23,7 @@
   var terminalNarration = null;
 
   var ioEntries = [];        // captured { request, response } interactions
+  var auditEntries = [];     // FHIR Provenance audit log (21 CFR Part 11 / ALCOA)
   var batchKey = 'good';     // regulator's selected tested batch (good | bad)
   var specMode = 'doc';      // consolidated spec view (doc | fhir)
 
@@ -214,6 +215,9 @@
       body =
         '<p class="cons-change">Change in this variation: <strong>' + esc(APIX.pqi.CHANGE.label) + '</strong> — ' +
           '<span class="diff-old">' + esc(APIX.pqi.CHANGE.before) + '</span> → <span class="diff-new">' + esc(APIX.pqi.CHANGE.after) + '</span></p>' +
+        '<p class="cons-ec">A computable <strong>ICH Q12 Established-Condition change</strong> — old range → new range on a ' +
+          'named, coded test — structured per the <strong>PQ-CMC / PQI R5 model FDA is standardizing</strong>. ' +
+          'Velexa (film-coated tablet) is a Solid Oral Dosage Form, inside PQ-CMC\'s current scope.</p>' +
         '<table class="grid spec-table"><thead><tr><th>Test</th><th>Release</th><th>End of shelf life</th></tr></thead>' +
           '<tbody>' + rows + '</tbody></table>';
     }
@@ -426,9 +430,16 @@
       '<div class="ct-total">Total (submit → decision): <strong>' + (totalMs != null ? esc(fmtElapsed(totalMs)) : '—') + '</strong>' +
         ' <span class="ct-baseline">vs. a typical manual variation measured in <em>weeks</em></span></div>' +
       '<ul class="adopt-list">' +
-        '<li>One structured spec, carried as both a human PDF and machine-readable FHIR over the same rails.</li>' +
+        '<li>One structured spec, carried as both a human PDF and machine-readable FHIR over the same rails — ' +
+          '<strong>PQI / PQ-CMC authors the content; APIX is the FHIR R5 transport.</strong></li>' +
+        '<li>This Water-Content tightening is a <strong>computable ICH Q12 Established-Condition change</strong> — ' +
+          'old range → new range on a named, coded test — the structured input a KASA-style assessment consumes. ' +
+          'Velexa is a Solid Oral Dosage Form, inside PQ-CMC\'s current scope.</li>' +
         '<li>Acceptance criteria are machine-checked at submit — out-of-spec is caught immediately, not buried in a PDF.</li>' +
-        '<li>Every status change is pushed and timestamped, so cycle time becomes measurable analytics.</li>' +
+        '<li>Every status change is pushed, timestamped, and recorded as a FHIR <code>Provenance</code> — ' +
+          'the who / what / when / why audit trail (21 CFR Part 11 / ALCOA) by design.</li>' +
+        '<li>Same FHIR R5, same BR&amp;R structured-spec model as the FDA-funded PQ-CMC IG: ' +
+          '<strong>directional alignment with FDA\'s stated direction</strong> — the transport half, in FHIR.</li>' +
       '</ul>';
     el('summary').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
@@ -446,6 +457,11 @@
     if (key === 'task') inspectFocus('Task — Type IB variation', store.task);
     else if (key === 'notif') inspectFocus('Subscription notification Bundle', lastNotif);
     else if (key === 'fhir') inspectFocus('PQI FHIR Bundle', APIX.pqi.bundle || APIX.pqi.normalize());
+    else if (key.indexOf('prov:') === 0) {
+      var pid = key.slice(5);
+      var pr = store.get('Provenance/' + pid);
+      if (pr) inspectFocus('Provenance — audit record', pr);
+    }
     else if (key.indexOf('ref:') === 0) {
       var ref = key.slice(4);
       var r = store.get(ref);
@@ -501,6 +517,50 @@
     el('io-list').appendChild(wrap.firstChild);
   }
 
+  /* ====================== AUDIT TRAIL (FHIR Provenance) =================== */
+  /* One row per Task lifecycle transition: When (recorded) | Who (agent) |
+     What (target + activity) | Why (the businessStatus / Task.code transition).
+     Framed to FDA's data-integrity "who/what/when/why" (21 CFR Part 11 / ALCOA). */
+  function provWho(p) {
+    var a = (p.agent && p.agent[0]) || {};
+    var who = (a.who && (a.who.display || a.who.reference)) || '—';
+    var role = (a.type && a.type.coding && a.type.coding[0] && a.type.coding[0].display) || '';
+    return esc(who) + (role ? ' <span class="aud-role">' + esc(role) + '</span>' : '');
+  }
+  function provWhat(p) {
+    var act = (p.activity && p.activity.coding && p.activity.coding[0] && p.activity.coding[0].code) || '';
+    var tgt = (p.target || []).map(function (t) { return t.reference || t.display; }).filter(Boolean);
+    var head = tgt[0] || '—';
+    var more = tgt.length > 1 ? ' <span class="aud-more">+' + (tgt.length - 1) + '</span>' : '';
+    return '<span class="aud-act">' + esc(act) + '</span> <code>' + esc(head) + '</code>' + more;
+  }
+  function provWhy(p) {
+    return (p.activity && p.activity.text) ||
+      (p.authorization && p.authorization[0] && p.authorization[0].concept && p.authorization[0].concept.text) || '';
+  }
+  function renderAuditEntry(p) {
+    var when = p.recorded ? new Date(p.recorded).toLocaleTimeString() : '';
+    var why = provWhy(p);
+    return '<tr><td class="aud-when">' + esc(when) + '</td>' +
+      '<td>' + provWho(p) + '</td>' +
+      '<td>' + provWhat(p) + '</td>' +
+      '<td class="aud-why">' + esc(why) +
+        ' <button class="link-btn" data-inspect="prov:' + esc(p.id) + '">view</button></td></tr>';
+  }
+  function renderAudit() {
+    var has = auditEntries.length > 0;
+    el('audit-sec').hidden = !has;
+    el('audit-note').hidden = !has;
+    el('audit-wrap').hidden = !has;
+    el('audit-count').textContent = auditEntries.length;
+    if (!has) { el('audit-wrap').innerHTML = ''; return; }
+    el('audit-wrap').innerHTML =
+      '<table class="grid audit-table"><thead><tr>' +
+        '<th>When</th><th>Who</th><th>What</th><th>Why</th>' +
+      '</tr></thead><tbody>' + auditEntries.map(renderAuditEntry).join('') + '</tbody></table>';
+  }
+  function addAudit(p) { auditEntries.push(p); renderAudit(); }
+
   /* ============================ STORE EVENTS ============================= */
   store.bus.addEventListener('task', function (ev) {
     if (ev.detail.firstTime) {
@@ -519,16 +579,19 @@
       renderSpine();
     }, 520);
   });
+  /* Each Task lifecycle transition emits a FHIR Provenance → the audit trail. */
+  store.bus.addEventListener('provenance', function (ev) { addAudit(ev.detail.provenance); });
 
   /* Real API calls feed the Inspect list. */
   APIX.client.bus.addEventListener('io', function (ev) { addIo(ev.detail); });
 
   /* ============================ RESET =================================== */
   function resetAll() {
-    i = 0; reached = {}; lastNotif = null; ioEntries = [];
+    i = 0; reached = {}; lastNotif = null; ioEntries = []; auditEntries = [];
     decisionPending = false; infoRoundDone = false; terminalNarration = null;
     batchKey = 'good'; specMode = 'doc';
     store.reset();
+    renderAudit();
     ['ind-author', 'ind-spec', 'ind-pkg', 'ind-track', 'ha-content', 'ha-review', 'ha-decide', 'summary'].forEach(hide);
     show('ha-empty');
     ['harmonize', 'consolidated', 'pkg', 'feed', 'reg-docs', 'reg-status', 'reg-outputs', 'review-result', 'io-list'].forEach(function (id) { el(id).innerHTML = ''; });
@@ -565,10 +628,49 @@
 
   /* ============================ ABOUT =================================== */
   var ABOUT_HTML =
-    '<div class="if-title">About — Real vs Simulated</div>' +
-    '<p class="muted">Built on real, valid FHIR R5 — independently verifiable.</p>' +
+    '<div class="if-title">About / FDA context</div>' +
+
+    '<p class="muted">This demo separates two halves: <strong>PQI / PQ-CMC</strong> authors the structured ' +
+    'pharmaceutical-quality <em>content</em>; <strong>APIX</strong> is the FHIR R5 <em>transport</em> that ' +
+    'submits, tracks, and pushes updates. The thesis — structured CMC content carried by an API-first FHIR ' +
+    'transport with real-time tracking — is in <strong>directional alignment with FDA\'s stated direction</strong>. ' +
+    'FDA has built the content half and a structured-assessment engine; an APIX-style FHIR transport is the ' +
+    'not-yet-built half.</p>' +
+
+    '<div class="fda-honesty">Honesty line (maturity). FDA does <strong>not</strong> accept FHIR ' +
+    '<em>submissions</em> in production, and FDA is <strong>not</strong> a named APIX participant (it <em>is</em> ' +
+    'a named contributor to Vulcan\'s ePI profile, with EMA and PMDA). Maturity gradient: ' +
+    '<strong>KASA = production</strong> (SODF) · <strong>PQ-CMC FHIR IG = STU / draft</strong> (SODF-only, ' +
+    'voluntary / for-comment, not mandatory) · <strong>eCTD v4.0 two-way comms = planned</strong> · ' +
+    '<strong>APIX = pre-ballot</strong> (IG v0.1.0). This demo shows the transport half in FHIR — never "FDA\'s plan."</div>' +
+
+    '<div class="inspect-sec" style="border-top:none">Where this fits at FDA</div>' +
+    '<table class="val-table about-table"><thead><tr><th>FDA anchor</th><th>Alignment</th></tr></thead><tbody>' +
+    '<tr><td><strong>PQ-CMC FHIR IG</strong> (FDA-funded, R5, eCTD Module 3)</td>' +
+      '<td>Same FHIR R5, same BR&amp;R work group, same structured-spec model as FDA\'s own IG. ' +
+      'Velexa is a film-coated tablet — a <strong>Solid Oral Dosage Form, inside PQ-CMC\'s current scope</strong>.</td></tr>' +
+    '<tr><td><strong>KASA</strong> (CDER/OPQ structured assessment)</td>' +
+      '<td>Our structured <code>PlanDefinition</code> + <code>ObservationDefinition</code> spec is the kind of ' +
+      'structured input a KASA-style assessment consumes. <em>Production (SODF).</em></td></tr>' +
+    '<tr><td><strong>ICH Q12 Established Conditions</strong></td>' +
+      '<td>The Water-Content variation is a <strong>computable EC change</strong> — old range → new range on a ' +
+      'named, coded test. <em>Final guidance.</em></td></tr>' +
+    '<tr><td><strong>IDMP guidance · SPL · GSRS · openFDA</strong></td>' +
+      '<td>PQI is a FHIR-native expression of the product / substance data FDA already standardizes. <em>Production.</em></td></tr>' +
+    '<tr><td><strong>TMAP / DMAP / EMAP</strong></td>' +
+      '<td>APIX-over-FHIR matches FDA\'s committed "external data interfaces / industry standards / interoperable" posture. <em>Published plans.</em></td></tr>' +
+    '<tr><td><strong>ESG NextGen</strong> submit / status / acknowledge</td>' +
+      '<td>APIX is the FHIR-native rendering of an ESG-NextGen-style submit-and-track API. <em>Production (REST, not FHIR).</em></td></tr>' +
+    '<tr><td><strong>eCTD v4.0 two-way comms</strong></td>' +
+      '<td>Our regulator → industry question loop models what v4.0\'s two-way communication aims to deliver. <em>Planned phase.</em></td></tr>' +
+    '<tr><td><strong>21 CFR Part 11 / ALCOA</strong></td>' +
+      '<td><code>Task</code> + <code>businessStatus</code> + versioning + <code>Provenance</code> = the ' +
+      'who / what / when / why audit trail by design. <em>Regulation.</em></td></tr>' +
+    '</tbody></table>' +
+
+    '<div class="inspect-sec">Real vs Simulated</div>' +
     '<table class="val-table about-table"><thead><tr><th>Aspect</th><th>Status</th></tr></thead><tbody>' +
-    '<tr><td>FHIR R5 resources (Task, DocumentReference, Binary, Subscription, PQI Bundle)</td><td class="pass">Real &amp; conformant</td></tr>' +
+    '<tr><td>FHIR R5 resources (Task, DocumentReference, Binary, Subscription, Provenance, PQI Bundle)</td><td class="pass">Real &amp; conformant</td></tr>' +
     '<tr><td>Conformance to the APIX + PQI IGs (official HL7 validator)</td><td class="pass">Real (88 → 1 documented IG bug)</td></tr>' +
     '<tr><td><strong>Live</strong> mode: POST / GET / $validate over the wire</td><td class="pass">Real, against public hapi.fhir.org/baseR5</td></tr>' +
     '<tr><td><strong>Local HAPI</strong> mode: self-hosted R5 server</td><td class="pass">Real REST + real R5 WebSocket subscription push</td></tr>' +
@@ -576,7 +678,8 @@
     '<tr><td>Real-time push delivery</td><td class="sim">Public HAPI: UI reads the Task back. Local HAPI: real WebSocket push.</td></tr>' +
     '</tbody></table>' +
     '<p class="muted">Mock mode is the stage default: offline, deterministic, instant. ' +
-    '<a href="https://build.fhir.org/ig/HL7/APIX---API-Exchange-for-Medicinal-Products/" target="_blank" rel="noopener">APIX conformance ↗</a></p>';
+    '<a href="https://build.fhir.org/ig/HL7/APIX---API-Exchange-for-Medicinal-Products/" target="_blank" rel="noopener">APIX IG ↗</a> · ' +
+    '<a href="https://build.fhir.org/ig/HL7/FHIR-us-pq-cmc-fda/" target="_blank" rel="noopener">PQ-CMC FHIR IG ↗</a></p>';
 
   /* ============================ WIRING ================================= */
   document.addEventListener('click', function (ev) {

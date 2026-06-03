@@ -30,6 +30,12 @@ APIX.OUTPUTS = {
   rejection:  { id: 'docref-rejection',  ctd: 'assessment-report',       title: 'Decision Letter (negative)' }
 };
 
+/* v3 terminology systems used by Provenance.activity + agent.type. */
+APIX.PROV = {
+  dataOperation: 'http://terminology.hl7.org/CodeSystem/v3-DataOperation',
+  participantType: 'http://terminology.hl7.org/CodeSystem/provenance-participant-type'
+};
+
 APIX.store = {
   resources: {},          // local cache: "Type/id" -> resource (mirrors server)
   bus: new EventTarget(),
@@ -39,6 +45,8 @@ APIX.store = {
   task: null,
   taskUrl: null,          // public URL of the server-created Task (live mode)
   submissionInputs: [],
+  provenance: [],         // ordered in-memory audit log (21 CFR Part 11 / ALCOA)
+  _provSeq: 0,
   _deliveryWired: false,
 
   // "Live" = any real-server backend (public HAPI or self-hosted local HAPI):
@@ -169,6 +177,76 @@ APIX.store = {
     return task;
   },
 
+  /* ---- Audit trail — FHIR R5 Provenance per Task lifecycle transition ----
+   * Build a valid base-R5 Provenance capturing the who/what/when/why of one
+   * lifecycle step (21 CFR Part 11 / ALCOA: attributable, contemporaneous,
+   * original, accurate). It is appended to the in-memory audit log, emitted on
+   * the bus so the UI can render it, and — on a real backend — written to the
+   * server with client.create() so it is a genuine server record. Keeping it a
+   * separate write means the emitted Task/DocumentReference shapes are unchanged.
+   *
+   *   spec = {
+   *     activity:  'CREATE' | 'UPDATE',
+   *     actor:     'applicant' | 'regulator',   // who performed the act
+   *     targets:   ['Task/<id>', 'DocumentReference/<id>', ...],
+   *     reason:    short human "why" (the businessStatus / Task.code transition)
+   *   }
+   */
+  _buildProvenance: function (spec) {
+    var now = new Date().toISOString();
+    var isReg = spec.actor === 'regulator';
+    var org = isReg ? APIX.seed.regulator : APIX.seed.applicant;
+    var display = isReg ? 'Health Authority' : 'SynthPharma AG';
+    // Author = the org that performed the act; custodian = the data steward.
+    // For a regulator action the regulator authors and also custodies the
+    // record on its side; for an applicant submission SynthPharma authors.
+    var agentCode = isReg ? 'custodian' : 'author';
+    this._provSeq += 1;
+    return {
+      resourceType: 'Provenance',
+      id: 'prov-' + this._provSeq,
+      target: (spec.targets || []).map(function (ref) { return { reference: ref }; }),
+      recorded: now,
+      // R5: Provenance.activity is a single CodeableConcept. The v3-DataOperation
+      // coding is the machine "what"; .text carries the human "why" (the
+      // businessStatus / Task.code transition) for rendering.
+      activity: {
+        coding: [{ system: APIX.PROV.dataOperation, code: spec.activity,
+          display: spec.activity === 'CREATE' ? 'create' : 'update' }],
+        text: spec.reason
+      },
+      // R5: the rationale for the activity lives in Provenance.authorization
+      // (CodeableReference). (R4's Provenance.reason was renamed/retyped in R5.)
+      authorization: [{ concept: { text: spec.reason } }],
+      agent: [{
+        type: { coding: [{ system: APIX.PROV.participantType, code: agentCode,
+          display: agentCode === 'custodian' ? 'Custodian' : 'Author' }] },
+        who: { reference: 'Organization/' + org.id, display: display }
+      }]
+    };
+  },
+
+  /* Build, record (audit log), emit, and — when live — persist a Provenance. */
+  recordProvenance: async function (spec) {
+    var prov = this._buildProvenance(spec);
+    this.provenance.push(prov);
+    this.put(prov);
+    // Real server write so the audit record genuinely exists server-side; guard
+    // keeps the mock fully in-process (the mock server already stores creates).
+    if (this._isLive()) {
+      var p = JSON.parse(JSON.stringify(prov));
+      // Targets may not be addressable on a foreign server by these local ids;
+      // keep them display-only so the create is a self-contained round-trip.
+      (p.target || []).forEach(function (t) {
+        if (t.reference) { t.display = t.reference.split('/').pop(); delete t.reference; }
+      });
+      try { await APIX.client.create(p, { label: 'Audit — Provenance (' + spec.activity + ')' }); }
+      catch (e) { /* audit write is best-effort; never block the workflow */ }
+    }
+    this.bus.dispatchEvent(new CustomEvent('provenance', { detail: { provenance: prov } }));
+    return prov;
+  },
+
   reset: function () {
     this._closeWebSocket();
     this.resources = {};
@@ -178,6 +256,8 @@ APIX.store = {
     this.task = null;
     this.taskUrl = null;
     this.submissionInputs = [];
+    this.provenance = [];
+    this._provSeq = 0;
     // Fresh server state so a re-run starts clean.
     if (APIX.MockFhirServer) {
       APIX.server = new APIX.MockFhirServer();
@@ -367,6 +447,16 @@ APIX.store = {
     // Notify the regulator (owner) -> populate its console. (The status-change
     // Subscription is registered later, in subscribe(); it drives Act 3.)
     this.bus.dispatchEvent(new CustomEvent('task', { detail: { task: this.task, firstTime: true } }));
+
+    // Audit: the submission created the Task and its input DocumentReferences.
+    var provTargets = ['Task/' + this.task.id];
+    this.submissionInputs.forEach(function (inp) {
+      if (inp.valueReference && inp.valueReference.reference) provTargets.push(inp.valueReference.reference);
+    });
+    await this.recordProvenance({
+      activity: 'CREATE', actor: 'applicant', targets: provTargets,
+      reason: 'Submitted Type IB variation — Task created (businessStatus: Submitted)'
+    });
     return this.task;
   },
 
@@ -475,6 +565,19 @@ APIX.store = {
     if (stored && stored.resourceType === 'Task') this.task = stored;   // adopt server meta (versionId bumped by server)
     this.put(this.task);
     this.bus.dispatchEvent(new CustomEvent('task', { detail: { task: this.task, firstTime: false } }));
+
+    // Audit: this transition is a status change on the Task (UPDATE). The
+    // applicant's response-to-questions is the one applicant-authored step; all
+    // other transitions are regulator acts. Targets include any new outputs.
+    var provActor = (effect.taskCode === 'response-to-questions') ? 'applicant' : 'regulator';
+    var why = 'businessStatus → ' + APIX.display('businessStatus', effect.businessStatus) +
+      ' (Task.status: ' + effect.status + ')' +
+      (effect.taskCode ? '; Task.code: ' + APIX.display('taskCode', effect.taskCode) : '');
+    var upTargets = ['Task/' + this.task.id];
+    (effect.addOutputs || []).forEach(function (k) {
+      if (APIX.OUTPUTS[k]) upTargets.push('DocumentReference/' + APIX.OUTPUTS[k].id);
+    });
+    await this.recordProvenance({ activity: 'UPDATE', actor: provActor, targets: upTargets, reason: why });
 
     // Live real-time. Two paths:
     //  (a) Local HAPI with an ACTIVE WebSocket bind → the server pushes a

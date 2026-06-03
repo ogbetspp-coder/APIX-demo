@@ -94,6 +94,10 @@ code, pre, .mono { font-family: Consolas, "Lucida Console", "Courier New", monos
 .live-note { color: var(--amber); font-weight: 400; }
 .about-table td { vertical-align: top; }
 .val-table .sim { color: var(--amber); font-weight: 700; }
+/* honesty / maturity callout in the About-FDA panel — sober amber, IG-styled */
+.fda-honesty { font-size: 12.5px; line-height: 1.55; color: var(--ink); background: var(--amber-bg);
+  border: 1px solid #e6d49a; border-left: 3px solid var(--amber); border-radius: var(--radius);
+  padding: 9px 12px; margin: 4px 0 6px; }
 
 /* ---------- status spine — the always-visible anchor ---------- */
 .spine { display: flex; align-items: center; gap: 0; padding: 10px 24px; background: var(--bg-alt);
@@ -160,6 +164,9 @@ code, pre, .mono { font-family: Consolas, "Lucida Console", "Courier New", monos
 .seg-btn:not(.on):hover { background: var(--bg-alt); }
 .cons-change { margin: 0 0 12px; font-size: 12.5px; color: var(--ink); background: var(--amber-bg);
   padding: 9px 12px; border-radius: var(--radius); border-left: 3px solid var(--amber); }
+.cons-ec { margin: 0 0 12px; font-size: 12px; line-height: 1.5; color: var(--ink-soft);
+  border-left: 3px solid var(--line-strong); padding: 2px 0 2px 10px; }
+.cons-ec strong { color: var(--ink); }
 .spec-table { width: 100%; font-size: 12.5px; }
 .spec-table th, .spec-table td { padding: 6px 9px; border: 1px solid var(--line); text-align: left; vertical-align: top; }
 .spec-table th { background: var(--th-bg); font-weight: 700; font-size: 11px; }
@@ -306,6 +313,25 @@ table.grid, .val-table, .ectd-table { border-collapse: collapse; }
   border-bottom: 1px solid var(--line); padding-bottom: 4px; }
 .inspect-sec { font-size: 10px; text-transform: uppercase; letter-spacing: .6px; font-weight: 700; color: var(--ink-soft);
   margin-top: 6px; border-top: 1px solid var(--line); padding-top: 10px; }
+
+/* ---------- audit trail (FHIR Provenance) — inside the Inspect slide-over ---------- */
+.audit-count { font-family: Consolas, monospace; font-size: 11px; font-weight: 700; color: var(--ink);
+  background: var(--th-bg); border: 1px solid var(--line); border-radius: 3px; padding: 0 5px; margin-left: 4px; }
+.audit-note { font-size: 11.5px; line-height: 1.5; color: var(--ink-soft); background: var(--box-bg);
+  border: 1px solid var(--box-border); border-left: 3px solid var(--navy); border-radius: var(--radius); padding: 8px 11px; }
+.audit-note code { color: var(--navy); }
+.audit-table { width: 100%; }
+.audit-table th, .audit-table td { padding: 5px 8px; border: 1px solid var(--line); text-align: left;
+  font-size: 11.5px; vertical-align: top; }
+.audit-table th { background: var(--th-bg); font-weight: 700; color: var(--ink); }
+.audit-table tbody tr:nth-child(even) { background: var(--bg-alt); }
+.aud-when { font-family: Consolas, monospace; white-space: nowrap; color: var(--ink-soft); }
+.aud-role { font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: var(--ink-soft); }
+.aud-act { font-family: Consolas, monospace; font-size: 10px; font-weight: 700; color: var(--navy);
+  background: var(--box-bg); border: 1px solid var(--box-border); border-radius: 3px; padding: 0 5px; }
+.aud-more { font-size: 10px; color: var(--ink-soft); }
+.aud-why { color: var(--ink); }
+
 .io-list { display: flex; flex-direction: column; gap: 8px; }
 .io-entry { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--bg); }
 .io-sum { width: 100%; display: flex; align-items: center; gap: 8px; cursor: pointer; text-align: left;

@@ -25,7 +25,7 @@ APIX.scenario = [
   {
     key: 'render', act: 'pqi', actor: 'applicant', phase: 'Consolidate',
     button: 'Consolidate the spec',
-    narration: 'The harmonized terms consolidate into ONE structured specification — both a human-readable eCTD 3.2.P.5.1 document and the machine-readable PQI FHIR Bundle. Toggle Document / FHIR. This is what APIX will carry.',
+    narration: 'The harmonized terms consolidate into ONE structured specification — both a human-readable eCTD 3.2.P.5.1 document and the machine-readable PQI FHIR Bundle. Toggle Document / FHIR. The Water-Content tightening is a computable ICH Q12 Established-Condition change — old range → new range on a named, coded test. This is what APIX will carry.',
     effect: { type: 'render' }
   },
 

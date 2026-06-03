@@ -28,7 +28,7 @@
       <button class="tool-btn" id="inspect-toggle" aria-expanded="false" title="Inspect FHIR + API calls">
         Inspect <span class="io-count" id="io-count">0</span>
       </button>
-      <button class="tool-btn" id="about-btn" title="About this demo">About</button>
+      <button class="tool-btn" id="about-btn" title="About this demo / FDA context">About / FDA context</button>
     </div>
   </header>
 
@@ -154,6 +154,12 @@
     </div>
     <div class="inspect-body">
       <div class="inspect-focus" id="inspect-focus"></div>
+      <div class="inspect-sec" id="audit-sec" hidden>Audit trail
+        <span class="audit-count" id="audit-count">0</span></div>
+      <div class="audit-note" id="audit-note" hidden>Audit trail by design — FHIR
+        <code>Provenance</code> + resource versioning give the who / what / when / why
+        FDA's data-integrity guidance requires (21 CFR Part 11 / ALCOA).</div>
+      <div class="audit-wrap" id="audit-wrap" hidden></div>
       <div class="inspect-sec">API calls</div>
       <div class="io-list" id="io-list"></div>
     </div>

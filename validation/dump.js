@@ -35,6 +35,9 @@ w('Subscription', APIX.seed.subscription);
   await APIX.store.subscribe();
   w('Task', APIX.store.task);
   w('DocumentReference', APIX.store.get('DocumentReference/docref-spec-fhir'));
+  // A representative audit Provenance (base R5 — no APIX profile) so the
+  // official validator confirms it is valid FHIR R5.
+  w('Provenance', APIX.store.provenance[0]);
 
   console.log('Exported ' + fs.readdirSync(OUT).length + ' resources to ' + OUT);
 })().catch(function (e) { console.error(e); process.exit(1); });
