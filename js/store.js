@@ -30,6 +30,20 @@ APIX.OUTPUTS = {
   rejection:  { id: 'docref-rejection',  ctd: 'assessment-report',       title: 'Decision Letter (negative)' }
 };
 
+/* The Type IB RSI exchange content (anchored in the CMC stability change). The
+ * Health Authority's List of Questions and the applicant's response-to-questions
+ * — surfaced as a genuine quick back-and-forth on the HA⇄Industry channel. */
+APIX.RSI = {
+  question: 'Quality (CMC). Justify the proposed tightening of the end-of-shelf-life Water Content acceptance ' +
+    'criterion (2.0% → 1.5% w/w) and confirm it is supported by the available long-term stability data. Confirm the ' +
+    'analytical procedure (Karl Fischer, USP <921>) remains validated for the revised limit and clarify any impact on ' +
+    'the approved shelf life.',
+  answer: 'The revised 1.5% w/w end-of-shelf-life limit is supported by 36-month long-term stability data on three ' +
+    'production-scale batches (maximum observed 1.2% w/w). The change tightens the criterion and does not affect the ' +
+    'approved 36-month shelf life. Water Content is determined by Karl Fischer titration (USP <921>), validated per ' +
+    'ICH Q2(R2); no method change is required.'
+};
+
 /* v3 terminology systems used by Provenance.activity + agent.type. */
 APIX.PROV = {
   dataOperation: 'http://terminology.hl7.org/CodeSystem/v3-DataOperation',

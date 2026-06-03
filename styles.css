@@ -150,12 +150,19 @@ code, pre, .mono { font-family: Consolas, "Lucida Console", "Courier New", monos
 .map-table { width: 100%; font-size: 12.5px; }
 .map-table th, .map-table td { padding: 6px 9px; border: 1px solid var(--line); text-align: left; vertical-align: top; }
 .map-table th { background: var(--th-bg); font-weight: 700; font-size: 11px; }
-.map-row { opacity: 0; transition: opacity 140ms ease; }
-.map-row.in { opacity: 1; }
+/* each row arrives FROM its source: slides in from the left carrying a colored
+   source lane (the left border). Calm, staggered (~140ms), no bounce. */
+.map-row { opacity: 0; transform: translateX(-8px); transition: opacity 160ms ease, transform 160ms ease; }
+.map-row.in { opacity: 1; transform: none; }
+.map-row td:first-child { border-left-width: 3px; }
+.map-row.org-lims td:first-child { border-left-color: var(--org-lims); }
+.map-row.org-stab td:first-child { border-left-color: var(--org-stab); }
+.map-row.org-meth td:first-child { border-left-color: var(--org-meth); }
 .map-table code { font-family: Consolas, "Courier New", monospace; font-size: 11px; color: var(--ink-soft); }
 .m-disp { color: var(--ink); }
 .m-tgt { color: var(--navy); font-weight: 700; }
-.m-rel { font-size: 11px; color: var(--ink-soft); }
+.m-src { font-size: 11px; color: var(--ink-soft); white-space: nowrap; }
+.m-src .src-dot { display: inline-block; margin-right: 5px; vertical-align: middle; }
 
 /* Author · consolidated spec (compact table + Document/FHIR toggle) */
 .seg { display: inline-flex; border: 1px solid #ccc; border-radius: var(--radius); overflow: hidden; background: var(--bg); }
@@ -436,6 +443,87 @@ table.grid, .val-table, .ectd-table { border-collapse: collapse; }
 .io-h { font-family: Consolas, monospace; font-size: 11px; color: var(--ink-soft); margin-top: 2px; word-break: break-all; }
 .io-json { max-height: 280px; margin: 6px 0 0; font-size: 12px; line-height: 1.5; }
 .io-empty { font-size: 11.5px; color: var(--ink-soft); font-style: italic; margin-top: 4px; }
+
+/* ---------- Author · map table reshaped to Local term → PQI term ---------- */
+.map-arrow-th { width: 18px; }
+.m-local { position: relative; }
+.m-src-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .3px; color: var(--ink-soft); margin-right: 7px; vertical-align: middle; }
+.m-arrow { text-align: center; color: var(--navy); font-weight: 700; }
+
+/* consolidated spec · per-origin legend */
+.cons-legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px; padding-top: 8px;
+  border-top: 1px solid var(--line); }
+
+/* ---------- #3 Human-readable Task card (Inspect) ---------- */
+.tk-card { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.tk-row { display: flex; gap: 10px; padding: 7px 11px; border-top: 1px solid var(--line); font-size: 12.5px; }
+.tk-row:first-child { border-top: none; }
+.tk-head { background: var(--box-bg); }
+.tk-k { flex: 0 0 130px; color: var(--ink-soft); font-weight: 700; font-size: 11.5px; }
+.tk-v { flex: 1; min-width: 0; color: var(--ink); }
+.tk-v small { color: var(--ink-soft); }
+.tk-v code { font-size: 11px; color: var(--ink-soft); }
+.tk-block { flex-direction: column; gap: 5px; }
+.tk-gloss { font-size: 12px; line-height: 1.5; color: var(--ink); background: var(--box-bg);
+  border-left: 3px solid var(--navy); padding: 8px 11px; }
+.tk-reason { background: var(--red-bg); border-left-color: var(--red); }
+.tk-docs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.tk-docs li { display: flex; align-items: center; gap: 7px; font-size: 12px; }
+.tk-none { color: var(--ink-soft); font-style: italic; font-size: 12px; }
+.tk-raw-toggle { margin-top: 10px; }
+.tk-raw { margin-top: 8px; }
+
+/* ---------- #2 APIX wrapper — layered "boxes within boxes" ---------- */
+.wrap-intro { font-size: 12.5px; color: var(--ink-soft); line-height: 1.5; margin: 0 0 12px; }
+.wrap-intro code { color: var(--navy); }
+.wrap-layer { border: 1px solid var(--box-border); border-radius: var(--radius); padding: 10px 12px;
+  background: var(--bg); margin-top: 8px; }
+.wl-task { border-left: 3px solid var(--navy); }
+.wl-docref { border-left: 3px solid var(--org-lims); }
+.wl-binary { border-left: 3px solid var(--amber); }
+.wl-bundle { border-left: 3px solid var(--green); }
+.wl-head { font-size: 12.5px; color: var(--ink); margin-bottom: 7px; }
+.wl-tag { font-family: Consolas, monospace; font-size: 11px; font-weight: 700; color: var(--navy);
+  background: var(--box-bg); border: 1px solid var(--box-border); border-radius: 3px; padding: 1px 6px; margin-right: 6px; }
+.wl-meta { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--ink); }
+.wl-meta code { font-size: 11px; color: var(--ink-soft); }
+.wl-arrow { font-family: Consolas, monospace; font-size: 11px; color: var(--ink-soft); margin: 8px 0 0; }
+.wl-b64 { font-family: Consolas, monospace; font-size: 11px; color: var(--ink-soft); word-break: break-all;
+  background: var(--bg-alt); border: 1px solid var(--line); border-radius: 3px; padding: 6px 8px; margin: 4px 0 6px; }
+.wl-decode { font-weight: 700; }
+.wl-decoded { color: var(--green); cursor: default; }
+.wl-bundle-json { max-height: 300px; margin: 0; }
+
+/* ---------- #4 HA declutter — compact auto-line + prominent received docs ---------- */
+.reg-status { background: none; border: none; padding: 0; margin-bottom: 12px; }
+.reg-status:empty { display: none; }
+.reg-auto-line { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; font-size: 11.5px;
+  padding: 7px 11px; background: var(--green-bg); border: 1px solid #c3ddc4; border-radius: var(--radius); }
+.reg-auto-line .reg-auto-lbl { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px;
+  color: var(--green); margin-right: 2px; }
+.reg-doc { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; cursor: pointer;
+  font-family: inherit; padding: 13px 15px; margin-bottom: 8px; border: 1px solid var(--line-strong);
+  border-radius: var(--radius); background: var(--box-bg); }
+.reg-doc:hover { border-color: var(--navy); background: var(--bg-alt); }
+.reg-doc-ic { font-family: Consolas, monospace; font-size: 12px; font-weight: 700; color: var(--navy);
+  background: var(--bg); border: 1px solid var(--box-border); border-radius: 3px; padding: 5px 9px; flex-shrink: 0; }
+.reg-doc-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.reg-doc-title { font-size: 13.5px; font-weight: 700; color: var(--ink); }
+.reg-doc-meta { font-size: 11.5px; color: var(--ink-soft); }
+.reg-doc-meta code { font-size: 11px; }
+.reg-doc-open { font-size: 12px; color: var(--link); font-weight: 700; white-space: nowrap; flex-shrink: 0; }
+
+/* ---------- #5 RSI exchange — the back-and-forth between the two desks ---------- */
+.conv { display: flex; flex-direction: column; gap: 10px; }
+.conv-msg { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; font-size: 12.5px; }
+.conv-ha { border-left: 3px solid var(--navy); background: var(--box-bg); }
+.conv-ind { border-left: 3px solid var(--green); background: var(--green-bg); }
+.conv-from { font-size: 11px; font-weight: 700; color: var(--ink); margin-bottom: 6px;
+  display: flex; align-items: center; gap: 8px; }
+.conv-code { font-family: Consolas, monospace; font-size: 10px; font-weight: 700; color: var(--ink-soft);
+  background: var(--bg); border: 1px solid var(--line); border-radius: 3px; padding: 1px 6px; }
+.conv-body { color: var(--ink); line-height: 1.55; }
 
 @media (max-width: 1000px) {
   .panes { grid-template-columns: 1fr; }

@@ -255,21 +255,29 @@
   }
 
   /* ============================ INDUSTRY ① Author ======================== */
-  function relText(rel) {
-    if (rel === 'equivalent') return 'equivalent';
-    if (rel === 'source-is-narrower-than-target') return 'narrower → broader';
-    if (rel === 'source-is-broader-than-target') return 'broader → narrower';
-    return esc(rel);
-  }
-
   /* Source systems, each given a sober origin color (from existing tokens) so a
-     viewer sees which datum came from where as the spec is assembled:
-       LIMS = blue (--link) · Stability = green (--green) · Method = amber (--amber). */
+     viewer sees which datum came from where as the spec is ASSEMBLED:
+       LIMS = blue (--org-lims) · Stability = green (--org-stab) · Method = amber (--org-meth). */
   var SOURCES = [
     { key: 'lims',  cls: 'org-lims',  label: 'LIMS' },
     { key: 'stab',  cls: 'org-stab',  label: 'Stability System' },
     { key: 'meth',  cls: 'org-meth',  label: 'Method Repository' }
   ];
+
+  /* Which source system each harmonized term arrives FROM (drives the per-row
+     colored lane + staggered "lands from its source" animation). Test terms come
+     off the LIMS QC export; shelf-life-defining tests are confirmed against the
+     Stability System; unit shorthand is carried by the Method Repository. */
+  var TERM_SOURCE = {
+    'DESCR': 'lims', 'ID-HPLC': 'lims', 'POT': 'lims', 'DISSO': 'lims',
+    'DEGR': 'stab', 'KF': 'stab', 'MICRO': 'lims',
+    'PCT_WW': 'meth', 'PCT_LC': 'meth'
+  };
+  function srcOf(code) { return TERM_SOURCE[code] || 'lims'; }
+  function srcCls(key) {
+    for (var i = 0; i < SOURCES.length; i++) if (SOURCES[i].key === key) return SOURCES[i].cls;
+    return 'org-lims';
+  }
 
   function renderLegend() {
     el('src-legend').innerHTML = SOURCES.map(function (s) {
@@ -278,31 +286,41 @@
   }
 
   /* Author — one action: reveal the colored source legend, the harmonize
-     mapping table (each row fires a real ConceptMap/$translate, visible in
-     Inspect), AND the consolidated ONE structured specification, assembled with
-     a gentle staggered reveal and tinted by data origin. */
+     mapping table (Local term → PQI term; each row fires a real
+     ConceptMap/$translate, visible in Inspect), AND the consolidated ONE
+     structured specification. Each spec row visibly ARRIVES from its source
+     system: a calm staggered reveal where the row carries its source color
+     (a colored lane on the left) as it lands. */
   function handleAuthor() {
     show('ind-author');
     renderLegend();
     var rows = APIX.terminology.rows();
+    // Columns are exactly Local term → PQI term (no Relationship column). Origin
+    // is shown as a colored left-lane + a small source label inside the Local
+    // cell, so the table reads as an ASSEMBLY from three colored source systems.
     el('harmonize').innerHTML =
       '<table class="grid map-table"><thead><tr>' +
-        '<th>Local term</th><th>PQI term</th><th>Relationship</th>' +
+        '<th>Local term</th><th class="map-arrow-th"></th><th>PQI term</th>' +
       '</tr></thead><tbody id="map-rows"></tbody></table>';
     var body = el('map-rows');
     rows.forEach(function (r, n) {
+      var skey = srcOf(r.source.code);
+      var scls = srcCls(skey);
+      var slabel = (function () { for (var i = 0; i < SOURCES.length; i++) if (SOURCES[i].key === skey) return SOURCES[i].label; return 'LIMS'; })();
       var tr = document.createElement('tr');
-      tr.className = 'map-row';
+      tr.className = 'map-row ' + scls;
       tr.innerHTML =
-        '<td><span class="m-disp">' + esc(r.source.display) + '</span> <code>' + esc(r.source.code) + '</code></td>' +
-        '<td><span class="m-disp m-tgt">' + esc(r.target.display) + '</span> <code>' + esc(r.target.code) + '</code></td>' +
-        '<td class="m-rel">' + relText(r.relationship) + '</td>';
+        '<td class="m-local">' +
+          '<span class="m-src-tag"><span class="src-dot ' + scls + '"></span>' + esc(slabel) + '</span>' +
+          '<span class="m-disp">' + esc(r.source.display) + '</span> <code>' + esc(r.source.code) + '</code></td>' +
+        '<td class="m-arrow">→</td>' +
+        '<td><span class="m-disp m-tgt">' + esc(r.target.display) + '</span> <code>' + esc(r.target.code) + '</code></td>';
       body.appendChild(tr);
       (function (row, node) {
         setTimeout(function () {
           node.classList.add('in');
           APIX.client.translate(row.source.system, row.source.code);
-        }, 160 * n + 80);
+        }, 140 * n + 80);
       })(r, tr);
     });
     APIX.pqi.normalize();
@@ -340,7 +358,12 @@
         '<th class="org-th org-meth">Method</th>' +
         '<th class="org-th org-lims">Release</th>' +
         '<th class="org-th org-stab">End of shelf life</th></tr></thead>' +
-        '<tbody>' + rows + '</tbody></table>';
+        '<tbody>' + rows + '</tbody></table>' +
+      '<div class="cons-legend">' +
+        '<span class="src-chip org-lims"><span class="src-dot"></span>Release ← LIMS</span>' +
+        '<span class="src-chip org-stab"><span class="src-dot"></span>End of shelf life ← Stability System</span>' +
+        '<span class="src-chip org-meth"><span class="src-dot"></span>Method ← Method Repository</span>' +
+      '</div>';
     el('consolidated').innerHTML = body;
     // gentle staggered assembly reveal
     var trs = el('consolidated').querySelectorAll('.spec-table tbody tr');
@@ -465,7 +488,25 @@
   async function handleAnswers() {
     await store.updateTask({ type: 'updateTask', status: 'in-progress', businessStatus: 'clock-restart', taskCode: 'response-to-questions' });
     feed('Responded to RSI — Clock Restart', 'notif');
+    renderRsi(true);   // reveal the sponsor's response under the question
     revealRegulator();
+  }
+
+  /* #5 RSI exchange — render the actual List of Questions (HA → Industry) and,
+     once answered, the sponsor's rational response. A genuine quick back-and-
+     forth between the two desks; codes (information-request / response-to-
+     questions) and clock-stop/clock-restart mechanics are unchanged. */
+  function renderRsi(withAnswer) {
+    show('ind-rsi');
+    var q = '<div class="conv-msg conv-ha">' +
+      '<div class="conv-from">Health Authority · List of Questions <span class="conv-code">information-request</span></div>' +
+      '<div class="conv-body">' + esc(APIX.RSI.question) + '</div></div>';
+    var a = withAnswer
+      ? '<div class="conv-msg conv-ind">' +
+          '<div class="conv-from">SynthPharma AG · Response <span class="conv-code">response-to-questions</span></div>' +
+          '<div class="conv-body">' + esc(APIX.RSI.answer) + '</div></div>'
+      : '';
+    el('rsi-conv').innerHTML = q + a;
   }
 
   /* ============================ HEALTH AUTHORITY ========================== */
@@ -473,37 +514,58 @@
     if (!store.task) return;
     hide('ha-empty');
     show('ha-content');
-    el('reg-docs').innerHTML = '<div class="payload-head">Received documents</div>' + docsHtml(store.task.input) + regAutoHtml();
-    updateRegStatus(store.task);
+    // #4 Declutter: a COMPACT one-line auto-validation strip, then the prominent
+    // Received-documents block (the main element of the pane).
+    el('reg-status').innerHTML = regAutoLineHtml();
+    el('reg-docs').innerHTML =
+      '<div class="payload-head">Received documents</div>' + regDocsHtml(store.task.input);
+    updateRegOutputs(store.task);
   }
 
-  /* The automatic-chain summary on the Regulator's Received view: the payload
-     arrived conformant, received, and administratively validated — all without a
-     human action. Each tag reflects state actually reached. */
-  function regAutoHtml() {
+  /* The automatic-chain summary, condensed to ONE compact line: the payload
+     arrived conformant, received, and administratively validated — no human act.
+     Each tick reflects state actually reached; OperationOutcome stays inspectable. */
+  function regAutoLineHtml() {
     if (!store.task) return '';
     var ok = ooSeverity(store.conformance) !== 'error';
     var rec = !!reached['received'];
     var val = !!reached['validation-successful'];
-    function tag(on, label, key) {
-      return '<span class="auto-tag' + (on ? ' on' : '') + '">' + (on ? '✓ ' : '') + esc(label) + '</span>' +
-        (key ? ' <button class="link-btn" data-inspect="' + esc(key) + '">view</button>' : '');
-    }
-    return '<div class="reg-auto"><span class="reg-auto-lbl">Automatic on receipt</span>' +
-      tag(ok, 'Conformant', 'conformance') +
-      tag(rec, 'Received') +
-      tag(val, 'Administratively validated') +
-      '</div>';
+    function tick(on, label) { return '<span class="auto-tag' + (on ? ' on' : '') + '">' + (on ? '✓ ' : '') + esc(label) + '</span>'; }
+    return '<div class="reg-auto-line"><span class="reg-auto-lbl">Automatic on receipt</span>' +
+      tick(ok, 'Conformant') + tick(rec, 'Received') + tick(val, 'Validated') +
+      ' <button class="link-btn" data-inspect="conformance">OperationOutcome</button>' +
+      ' <button class="link-btn" data-inspect="task">view Task</button></div>';
   }
 
+  /* Prominent received-document cards for the HA pane. The whole card is the
+     affordance — clicking opens the layered APIX-wrapper view (#2/#4). */
+  function regDocsHtml(inputs) {
+    return inputs.map(function (inp) {
+      var d = store.get(inp.valueReference.reference);
+      var ct = d ? d.content[0].attachment.contentType : 'application/pdf';
+      var size = d ? d.content[0].attachment.size : 0;
+      var ttype = inp.type.coding[0].code;
+      var ic = ct === 'application/fhir+json' ? 'FHIR' : 'PDF';
+      return '<button class="reg-doc" data-inspect="ref:' + esc(inp.valueReference.reference) + '">' +
+        '<span class="reg-doc-ic">' + ic + '</span>' +
+        '<span class="reg-doc-main">' +
+          '<span class="reg-doc-title">' + esc(inp.valueReference.display) + '</span>' +
+          '<span class="reg-doc-meta"><code>' + esc(ttype) + '</code> · ' + esc(ct) + ' · ' + bytes(size) + '</span>' +
+        '</span>' +
+        '<span class="reg-doc-open">Open APIX wrapper →</span>' +
+      '</button>';
+    }).join('');
+  }
+
+  /* On any Task update, refresh the compact auto-line (its businessStatus moves)
+     and the outputs list. Kept callable from the store 'task' event. */
   function updateRegStatus(task) {
-    el('reg-status').innerHTML =
-      '<span class="rs-label">Task</span>' +
-      '<span class="badge badge-status">' + esc(task.status) + '</span>' +
-      '<span class="badge badge-biz">' + esc(task.businessStatus.coding[0].display) + '</span>' +
-      (task.identifier.length > 1 ? '<span class="badge badge-proc">' + esc(task.identifier[1].value) + '</span>' : '') +
-      ' <button class="link-btn" data-inspect="task">view Task</button>';
-    if (task.output && task.output.length) {
+    if (el('ha-content').hidden) return;
+    el('reg-status').innerHTML = regAutoLineHtml();
+    updateRegOutputs(task);
+  }
+  function updateRegOutputs(task) {
+    if (task && task.output && task.output.length) {
       el('reg-outputs').innerHTML = '<div class="payload-head">Outputs sent back</div>' +
         task.output.map(function (o) {
           return '<div class="doc"><span class="doc-ic">PDF</span><span class="doc-title">' + esc(o.valueReference.display) + '</span></div>';
@@ -585,6 +647,8 @@
         await store.updateTask({ type: 'updateTask', status: 'on-hold', businessStatus: 'clock-stop', taskCode: 'information-request' });
         infoAsked = true;
         revealRegulator();
+        renderRsi(false);   // the actual List of Questions lands on the Industry side
+        feed('Received RSI — Clock Stop', 'notif');
         // Clock Stop. The RSI crosses to Industry; its "Send answers" lights up.
         passTurn(null, 'answers', 'ind', 'ind', 'Clock Stop · RSI');
       }
@@ -649,8 +713,134 @@
     var body = isHtml ? htmlOrObj : '<pre class="modal-json">' + APIX.highlight(htmlOrObj) + '</pre>';
     el('inspect-focus').innerHTML = '<div class="if-title">' + esc(title) + '</div>' + body;
   }
+  /* Plain-language gloss for the businessStatus the Task is currently in — so a
+     non-technical viewer reads what the code MEANS, without hiding the code. */
+  var BIZ_GLOSS = {
+    'submitted': 'Submitted — the variation has been lodged and is awaiting acknowledgement.',
+    'received': 'Received — the authority has acknowledged receipt of the submission.',
+    'validation-successful': 'Administratively validated — complete and correctly classified; eligible for assessment.',
+    'under-assessment': 'Under assessment — an assessor is reviewing the structured specification.',
+    'clock-stop': 'On hold — Clock stop: review paused awaiting the applicant’s response to the List of Questions.',
+    'clock-restart': 'Clock restart — the applicant has responded; assessment resumes.',
+    'approved': 'Approved — the variation has been accepted; the specification change takes effect.',
+    'rejected': 'Rejected — the variation was not accepted (see the grounds on the decision letter).'
+  };
+
+  /* ---- #3 Human-readable Task card (IG-narrative style, fidelity intact) ----
+     A clean labelled card a non-technical viewer can read, with a Raw FHIR JSON
+     toggle that reveals the exact resource. */
+  function taskDocsList(items, fallbackIc) {
+    if (!items || !items.length) return '<span class="tk-none">none yet</span>';
+    return '<ul class="tk-docs">' + items.map(function (it) {
+      var d = it.valueReference && it.valueReference.reference ? store.get(it.valueReference.reference) : null;
+      var ct = d && d.content ? d.content[0].attachment.contentType : null;
+      var ic = ct === 'application/fhir+json' ? 'FHIR' : (ct === 'application/pdf' ? 'PDF' : (fallbackIc || 'DOC'));
+      var ttype = (it.type && it.type.coding && it.type.coding[0]) ? it.type.coding[0].code : '';
+      return '<li><span class="doc-ic">' + esc(ic) + '</span> ' + esc(it.valueReference.display || '(document)') +
+        (ttype ? ' <code>' + esc(ttype) + '</code>' : '') + '</li>';
+    }).join('') + '</ul>';
+  }
+  function renderTaskFocus() {
+    var t = store.task;
+    if (!t) { inspectFocus('Task', { resourceType: 'Task' }); return; }
+    var bizCode = (t.businessStatus && t.businessStatus.coding && t.businessStatus.coding[0]) ? t.businessStatus.coding[0].code : '';
+    var bizDisp = (t.businessStatus && t.businessStatus.coding && t.businessStatus.coding[0]) ? t.businessStatus.coding[0].display : bizCode;
+    var codeDisp = (t.code && t.code.coding && t.code.coding[0]) ? t.code.coding[0].display : '';
+    var procNo = '';
+    (t.identifier || []).forEach(function (id) {
+      if (id.type && id.type.coding && id.type.coding[0] && id.type.coding[0].code === 'apixregulatorprocedureno') procNo = id.value;
+    });
+    var groupId = (t.groupIdentifier && t.groupIdentifier.value) || '';
+    var requester = (t.requester && (t.requester.display || t.requester.reference)) || '—';
+    var performer = (t.owner && (t.owner.display || t.owner.reference)) || '—';
+    var gloss = BIZ_GLOSS[bizCode] || '';
+    var reason = (t.statusReason && t.statusReason.text) || '';
+    var card =
+      '<div class="tk-card">' +
+        '<div class="tk-row tk-head"><span class="tk-k">Submission</span>' +
+          '<span class="tk-v"><strong>' + esc(codeDisp || 'Variation') + '</strong></span></div>' +
+        '<div class="tk-row"><span class="tk-k">Status</span>' +
+          '<span class="tk-v"><span class="badge badge-status">' + esc(t.status) + '</span>' +
+          ' <span class="badge badge-biz">' + esc(bizDisp) + '</span></span></div>' +
+        (gloss ? '<div class="tk-gloss">' + esc(gloss) + '</div>' : '') +
+        (reason ? '<div class="tk-gloss tk-reason"><strong>Grounds:</strong> ' + esc(reason) + '</div>' : '') +
+        '<div class="tk-row"><span class="tk-k">Procedure number</span><span class="tk-v"><code>' + esc(procNo || 'not yet assigned') + '</code></span></div>' +
+        '<div class="tk-row"><span class="tk-k">Procedure thread</span><span class="tk-v"><code>' + esc(groupId || '—') + '</code> <small>(group identifier)</small></span></div>' +
+        '<div class="tk-row"><span class="tk-k">Requester</span><span class="tk-v">' + esc(requester) + ' <small>(applicant)</small></span></div>' +
+        '<div class="tk-row"><span class="tk-k">Performer</span><span class="tk-v">' + esc(performer) + ' <small>(regulator)</small></span></div>' +
+        '<div class="tk-row tk-block"><span class="tk-k">Input documents</span><span class="tk-v">' + taskDocsList(t.input) + '</span></div>' +
+        '<div class="tk-row tk-block"><span class="tk-k">Output documents</span><span class="tk-v">' + taskDocsList(t.output, 'PDF') + '</span></div>' +
+      '</div>' +
+      '<button class="link-btn tk-raw-toggle" id="tk-raw-toggle">Show raw FHIR JSON</button>' +
+      '<pre class="modal-json tk-raw" id="tk-raw" hidden>' + APIX.highlight(t) + '</pre>';
+    el('inspect-focus').innerHTML = '<div class="if-title">Task — Type IB variation</div>' + card;
+  }
+
+  /* ---- #2 APIX wrapper view — layered, "how content is decoded into the
+     APIX wrapper". Task ▸ input → DocumentReference ▸ → Binary (base64, with a
+     real Decode toggle) ▸ → PQI Bundle. The Decode genuinely atob()-decodes the
+     stored Binary.data and shows it equals the PQI Bundle. */
+  function renderWrapperFocus() {
+    var t = store.task;
+    var docref = store.get('DocumentReference/docref-spec-fhir');
+    var bin = store.get('Binary/binary-spec-fhir');
+    var bizDisp = (t && t.businessStatus && t.businessStatus.coding && t.businessStatus.coding[0]) ? t.businessStatus.coding[0].display : '—';
+    var codeDisp = (t && t.code && t.code.coding && t.code.coding[0]) ? t.code.coding[0].display : 'Type IB Variation';
+    var att = docref && docref.content ? docref.content[0].attachment : {};
+    var b64 = (bin && bin.data) || '';
+    var b64short = b64.length > 88 ? b64.slice(0, 88) + '…' : b64;
+    var html =
+      '<div class="wrap-stack">' +
+        '<div class="wrap-layer wl-task">' +
+          '<div class="wl-head"><span class="wl-tag">Task</span> envelope / orchestrator</div>' +
+          '<div class="wl-meta">' +
+            '<span><code>code</code> ' + esc(codeDisp) + '</span>' +
+            '<span><code>status</code> ' + esc(t ? t.status : '—') + ' · <code>businessStatus</code> ' + esc(bizDisp) + '</span>' +
+            '<span><code>requester</code> SynthPharma AG → <code>owner</code> Health Authority</span>' +
+          '</div>' +
+          '<div class="wl-arrow">input[].valueReference →</div>' +
+          '<div class="wrap-layer wl-docref">' +
+            '<div class="wl-head"><span class="wl-tag">DocumentReference</span> the library card</div>' +
+            '<div class="wl-meta">' +
+              '<span><code>type</code> 3.2.P.5.1 · ' + esc((docref && docref.type && docref.type.coding[0].display) || 'Drug Product Specification') + '</span>' +
+              '<span><code>title</code> ' + esc(att.title || '—') + '</span>' +
+              '<span><code>version</code> ' + esc((docref && docref.version) || '—') + ' · <code>contentType</code> ' + esc(att.contentType || '—') + '</span>' +
+            '</div>' +
+            '<div class="wl-arrow">content.attachment.url →</div>' +
+            '<div class="wrap-layer wl-binary">' +
+              '<div class="wl-head"><span class="wl-tag">Binary</span> ' + esc((bin && bin.contentType) || 'application/fhir+json') + ', base64</div>' +
+              '<div class="wl-b64" id="wl-b64"><code>' + esc(b64short) + '</code></div>' +
+              '<button class="link-btn wl-decode" id="wl-decode">Decode base64 →</button>' +
+              '<div class="wrap-layer wl-bundle" id="wl-bundle" hidden>' +
+                '<div class="wl-head"><span class="wl-tag">PQI Bundle</span> PlanDefinition + ObservationDefinitions</div>' +
+                '<pre class="modal-json wl-bundle-json" id="wl-bundle-json"></pre>' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    el('inspect-focus').innerHTML = '<div class="if-title">Payload / APIX wrapper</div>' +
+      '<p class="wrap-intro">The PQI Bundle is encoded into a <code>Binary</code>, described by a <code>DocumentReference</code>, carried by a <code>Task</code>.</p>' + html;
+  }
+
+  /* Real Decode: base64-decode the stored Binary.data and render the resulting
+     PQI Bundle (proving the Binary IS the PQI Bundle, not a separate copy). */
+  function decodeWrapperBinary() {
+    var bin = store.get('Binary/binary-spec-fhir');
+    var bundleEl = el('wl-bundle'), jsonEl = el('wl-bundle-json'), btn = el('wl-decode');
+    if (!bin || !bin.data || !bundleEl || !jsonEl) return;
+    var decode = (typeof atob === 'function') ? atob : function (s) { return Buffer.from(s, 'base64').toString('binary'); };
+    var json;
+    try { json = JSON.parse(decodeURIComponent(escape(decode(bin.data)))); }
+    catch (e) { try { json = JSON.parse(decode(bin.data)); } catch (e2) { json = { error: 'decode failed' }; } }
+    jsonEl.innerHTML = APIX.highlight(json);
+    bundleEl.hidden = false;
+    if (btn) { btn.textContent = 'Decoded — equals the PQI Bundle'; btn.disabled = true; btn.classList.add('wl-decoded'); }
+  }
+
   function inspectKey(key) {
-    if (key === 'task') inspectFocus('Task — Type IB variation', store.task);
+    if (key === 'task') renderTaskFocus();
+    else if (key === 'wrapper') renderWrapperFocus();
     else if (key === 'conformance') inspectFocus('Conformance check — $validate OperationOutcome (automatic)', store.conformance || { resourceType: 'OperationOutcome', issue: [] });
     else if (key === 'notif') inspectFocus('Subscription notification Bundle', lastNotif);
     else if (key === 'fhir') inspectFocus('PQI FHIR Bundle', APIX.pqi.bundle || APIX.pqi.normalize());
@@ -661,8 +851,13 @@
     }
     else if (key.indexOf('ref:') === 0) {
       var ref = key.slice(4);
-      var r = store.get(ref);
-      if (r) inspectFocus(r.resourceType + (r.content ? ' — ' + r.content[0].attachment.title : ''), r);
+      // The structured spec document opens the layered APIX-wrapper view (#2);
+      // other references fall back to a raw resource peek.
+      if (ref === 'DocumentReference/docref-spec-fhir') { renderWrapperFocus(); }
+      else {
+        var r = store.get(ref);
+        if (r) inspectFocus(r.resourceType + (r.content ? ' — ' + r.content[0].attachment.title : ''), r);
+      }
     }
     openInspect();
   }
@@ -792,9 +987,9 @@
     renderAudit();
     el('xing').hidden = true; el('xing').className = 'xing';
     el('pane-ind').classList.remove('recv'); el('pane-ha').classList.remove('recv');
-    ['ind-author', 'ind-spec', 'ind-pkg', 'ind-track', 'ha-content', 'ha-review', 'summary'].forEach(hide);
+    ['ind-author', 'ind-spec', 'ind-pkg', 'ind-rsi', 'ind-track', 'ha-content', 'ha-review', 'summary'].forEach(hide);
     show('ha-empty');
-    ['ind-flow', 'ha-flow', 'harmonize', 'src-legend', 'consolidated', 'pkg', 'feed', 'reg-docs', 'reg-status', 'reg-outputs', 'review-result', 'io-list'].forEach(function (id) { el(id).innerHTML = ''; });
+    ['ind-flow', 'ha-flow', 'harmonize', 'src-legend', 'consolidated', 'pkg', 'rsi-conv', 'feed', 'reg-docs', 'reg-status', 'reg-outputs', 'review-result', 'io-list'].forEach(function (id) { el(id).innerHTML = ''; });
     setIoCount(); closeInspect();
     setBatch('good');
     refreshControls();
@@ -901,6 +1096,17 @@
   document.addEventListener('click', function (ev) {
     var sum = ev.target.closest('.io-sum');
     if (sum) { var det = sum.parentNode.querySelector('.io-detail'); if (det) det.hidden = !det.hidden; return; }
+    // #3 Task card: reveal the raw FHIR JSON.
+    if (ev.target.closest('#tk-raw-toggle')) {
+      var raw = el('tk-raw'), tg = el('tk-raw-toggle');
+      if (raw) { raw.hidden = !raw.hidden; if (tg) tg.textContent = raw.hidden ? 'Show raw FHIR JSON' : 'Hide raw FHIR JSON'; }
+      return;
+    }
+    // #2 APIX wrapper: actually base64-decode the stored Binary back to the PQI Bundle.
+    if (ev.target.closest('#wl-decode')) {
+      decodeWrapperBinary();
+      return;
+    }
     var ins = ev.target.closest('[data-inspect]'); if (ins) { inspectKey(ins.getAttribute('data-inspect')); return; }
     var fa = ev.target.closest('[data-flow]'); if (fa) { runFlow(fa.getAttribute('data-flow')); return; }
     var b = ev.target.closest('[data-batch]'); if (b) { setBatch(b.getAttribute('data-batch')); if (el('review-result').innerHTML) renderValidation(); return; }
