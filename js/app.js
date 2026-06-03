@@ -74,11 +74,11 @@
     var step = S[i];
     if (step) {
       el('narration').textContent = step.narration;
-      el('stepbtn').innerHTML = step.button + ' ▶';
+      el('stepbtn').innerHTML = step.button + ' &rarr;';
       el('stepbtn').disabled = false;
       el('progress').textContent = 'Step ' + (i + 1) + ' / ' + S.length;
     } else {
-      el('narration').innerHTML = terminalNarration || '✅ <strong>Done — end to end in minutes.</strong> Every status change was timestamped (your cycle-time analytics), and APIX carried both the PDF and the structured FHIR over the same rails.';
+      el('narration').innerHTML = terminalNarration || '<strong>Done — end to end in minutes.</strong> Every status change was timestamped (your cycle-time analytics), and APIX carried both the PDF and the structured FHIR over the same rails.';
       el('stepbtn').innerHTML = 'Done'; el('stepbtn').disabled = true;
       el('progress').textContent = 'Complete';
       setStepper(4);
@@ -129,7 +129,7 @@
       }
       if (!decisionPending) i += 1;
     } catch (e) {
-      el('narration').innerHTML = '⚠️ <strong>Step failed:</strong> ' + esc(e && e.message ? e.message : String(e)) +
+      el('narration').innerHTML = '<strong>Step failed:</strong> ' + esc(e && e.message ? e.message : String(e)) +
         (store._isLive ? ' — the public HAPI server may be busy; retry, or switch back to Mock.' : '');
     } finally {
       inFlight = false;
@@ -143,9 +143,9 @@
      next transition. Approve/Reject are terminal; Request information runs one
      Q&A loop then re-arms these same three buttons. */
   function lockStepForDecision() {
-    el('stepbtn').innerHTML = 'Pick a decision →';
+    el('stepbtn').innerHTML = 'Pick a decision &rarr;';
     el('stepbtn').disabled = true;
-    el('narration').innerHTML = '⏸️ <strong>Over to the regulator.</strong> On the Health Authority panel, pick an outcome: ' +
+    el('narration').innerHTML = '<strong>Over to the regulator.</strong> On the Health Authority panel, pick an outcome: ' +
       '<strong>Approve</strong>, <strong>Request information</strong> (a clock-stop Q&amp;A loop), or <strong>Reject</strong>. Nothing auto-approves.';
   }
   function show(id) { el(id).hidden = false; }
@@ -201,8 +201,8 @@
         '<div class="cons-top">' +
           '<div class="cons-title">Consolidated specification — Velexa 175&nbsp;mg</div>' +
           '<div class="seg" id="cons-seg">' +
-            '<button class="seg-btn' + (mode !== 'fhir' ? ' on' : '') + '" data-mode="doc">📄 Document</button>' +
-            '<button class="seg-btn' + (mode === 'fhir' ? ' on' : '') + '" data-mode="fhir">{ } FHIR</button>' +
+            '<button class="seg-btn' + (mode !== 'fhir' ? ' on' : '') + '" data-mode="doc">Document</button>' +
+            '<button class="seg-btn' + (mode === 'fhir' ? ' on' : '') + '" data-mode="fhir">FHIR</button>' +
           '</div>' +
         '</div>' +
         '<p class="cons-change">Change in this variation: <strong>' + esc(APIX.pqi.CHANGE.label) + '</strong> — ' +
@@ -219,7 +219,7 @@
   /* ---- ACT 2 ------------------------------------------------------------ */
   function drawApixSteps() {
     el('apixsteps').innerHTML = APIX_STEPS.map(function (s, n) {
-      return '<div class="astep" id="astep-' + n + '"><span class="tick">✓</span>' + esc(s) + '</div>';
+      return '<div class="astep" id="astep-' + n + '"><span class="tick"></span>' + esc(s) + '</div>';
     }).join('');
   }
   function markApix(name) {
@@ -239,7 +239,7 @@
       var ct = d ? d.content[0].attachment.contentType : 'application/pdf';
       var size = d ? d.content[0].attachment.size : 0;
       var spec = inp.type.coding[0].code === '3.2.P.5.1';
-      var ic = ct === 'application/fhir+json' ? '{ }' : '📄';
+      var ic = ct === 'application/fhir+json' ? 'FHIR' : 'PDF';
       return '<div class="doc' + (spec ? ' doc-spec' : '') + '"><span class="doc-ic">' + ic + '</span>' +
         '<span class="doc-ct">' + esc(inp.type.coding[0].code) + '</span>' +
         '<span class="doc-title">' + esc(inp.valueReference.display) + '</span>' +
@@ -263,9 +263,9 @@
     var t = store.task;
     el('pkg').hidden = false;
     el('pkg').innerHTML = '<div class="pkg-head">Submission package · ' + t.input.length +
-      ' documents <button class="peek" data-peek="Task">View Task { }</button> ' + verifyLinkHtml() + '</div>' + docsHtml(t.input);
+      ' documents <button class="peek" data-peek="Task">View Task</button> ' + verifyLinkHtml() + '</div>' + docsHtml(t.input);
     markApix('Stream'); markApix('Describe'); markApix('Orchestrate');
-    flyChip('📦 ' + t.input.length + ' documents →', 'right');
+    flyChip(t.input.length + ' documents → delivered', 'right');
     setTimeout(revealRegulator, 950);
   }
   function revealRegulator() {
@@ -279,10 +279,10 @@
     markApix('Subscribe');
     el('loopnote').hidden = false;
     if (store._isLive()) {
-      el('loopnote').innerHTML = '🔁 <strong>FHIR Subscription</strong> registered on the server.<br>' +
+      el('loopnote').innerHTML = '<strong>FHIR Subscription</strong> registered on the server.<br>' +
         '<span class="live-note">UI reads the Task back after each change (production = a rest-hook webhook push).</span>';
     } else {
-      el('loopnote').innerHTML = '🔁 <strong>FHIR Subscription</strong><br>Every status change is pushed back automatically — no polling, no email.';
+      el('loopnote').innerHTML = '<strong>FHIR Subscription</strong><br>Every status change is pushed back automatically — no polling, no email.';
     }
     el('tracker').hidden = false;
     renderTracker('submitted');
@@ -297,7 +297,7 @@
     if (task.output && task.output.length) {
       el('reg-outputs').innerHTML = '<div class="payload-head">Outputs sent back</div>' +
         task.output.map(function (o) {
-          return '<div class="doc"><span class="doc-ic">📄</span><span class="doc-title">' + esc(o.valueReference.display) + '</span></div>';
+          return '<div class="doc"><span class="doc-ic">PDF</span><span class="doc-title">' + esc(o.valueReference.display) + '</span></div>';
         }).join('');
     }
   }
@@ -307,18 +307,18 @@
     var activeKey = (next && actOf(next) === 3) ? next.key : null;
     el('review').innerHTML = '<div class="review-head">Regulatory review</div>' + REVIEW.map(function (it) {
       var cls = 'ritem' + (reviewDone[it.key] ? ' done' : '') + (it.key === activeKey ? ' active' : '');
-      return '<div class="' + cls + '"><span class="rdot">' + (reviewDone[it.key] ? '✓' : '') + '</span>' + esc(it.label) + '</div>';
+      return '<div class="' + cls + '"><span class="rdot"></span>' + esc(it.label) + '</div>';
     }).join('');
   }
   function renderTracker(markCode, justNow) {
     if (markCode) reached[markCode] = new Date();
     el('tracker').innerHTML = '<div class="tracker-head">Live submission tracking ' +
-      (lastNotif ? '<button class="peek" data-peek="notif">last notification { }</button>' : '') + '</div>' +
-      APIX.businessStatusFlow.map(function (m) {
+      (lastNotif ? '<button class="peek" data-peek="notif">last notification</button>' : '') + '</div>' +
+      APIX.businessStatusFlow.map(function (m, n) {
         var done = !!reached[m.code];
         var ts = done ? reached[m.code].toLocaleTimeString() : '';
         return '<div class="tnode ' + (done ? 'done' : '') + (m.code === justNow ? ' just' : '') + '">' +
-          '<span class="tdot">' + (done ? m.icon : '○') + '</span><span class="tlbl">' + esc(m.label) +
+          '<span class="tdot">' + (n + 1) + '</span><span class="tlbl">' + esc(m.label) +
           '</span><span class="tts">' + ts + '</span></div>';
       }).join('');
   }
@@ -333,7 +333,7 @@
     row.innerHTML =
       '<span class="conv-dir">' + from + ' <span class="conv-arrow">→</span> ' + to + '</span>' +
       '<span class="conv-msg">' + text + '</span>' +
-      (peek ? '<button class="conv-peek peek" data-peek="' + esc(peek) + '">view { }</button>' : '');
+      (peek ? '<button class="conv-peek peek" data-peek="' + esc(peek) + '">view FHIR</button>' : '');
     el('conv-log').appendChild(row);
     el('conv-log').scrollTop = el('conv-log').scrollHeight;
   }
@@ -363,28 +363,28 @@
       if (kind === 'approve') {
         await store.updateTask({ type: 'updateTask', status: 'completed', businessStatus: 'approved', taskCode: 'approval', addOutputs: ['approval', 'assessment'] });
         reviewDone['approve'] = true;
-        terminalNarration = '✅ <strong>Approved — end to end in minutes.</strong> Every status change was timestamped (your cycle-time analytics below), and APIX carried both the PDF and the structured FHIR over the same rails.';
+        terminalNarration = '<strong>Approved — end to end in minutes.</strong> Every status change was timestamped (your cycle-time analytics below), and APIX carried both the PDF and the structured FHIR over the same rails.';
         finishDecision();
       } else if (kind === 'reject') {
         await store.updateTask({ type: 'updateTask', status: 'completed', businessStatus: 'rejected', taskCode: 'rejection', addOutputs: ['rejection'] });
         reviewDone['approve'] = true;
-        convLine('in', '🏛️ Health Authority', '🏭 SynthPharma', '🏛️→🏭 Negative decision — variation rejected', 'Task');
-        terminalNarration = '⛔ <strong>Rejected — but still in minutes, fully tracked.</strong> The same APIX rails carry a negative decision; every phase is timestamped in the cycle-time summary below.';
+        convLine('in', 'Regulator', 'Industry', 'Negative decision — variation rejected', 'Task');
+        terminalNarration = '<strong>Rejected — but still in minutes, fully tracked.</strong> The same APIX rails carry a negative decision; every phase is timestamped in the cycle-time summary below.';
         finishDecision();
       } else if (kind === 'info') {
         if (infoRoundDone) { setDecisionBtns(true); return; }   // one loop only
         // HA posts a List of Questions (clock-stop) ...
         await store.updateTask({ type: 'updateTask', status: 'on-hold', businessStatus: 'clock-stop', taskCode: 'information-request' });
-        convLine('in', '🏛️ Health Authority', '🏭 SynthPharma', '❔ List of Questions: justify the tightened end-of-shelf-life Water Content limit (≤ 1.5% w/w)', 'Task');
+        convLine('in', 'Regulator', 'Industry', 'List of Questions: justify the tightened end-of-shelf-life Water Content limit (≤ 1.5% w/w)', 'Task');
         // ... Industry responds (clock restart).
         await store.updateTask({ type: 'updateTask', status: 'in-progress', businessStatus: 'under-assessment', taskCode: 'response-to-questions' });
-        convLine('out', '🏭 SynthPharma', '🏛️ Health Authority', '📎 Response to questions: 36-month stability data supports ≤ 1.5% — clock restarts', 'Task');
+        convLine('out', 'Industry', 'Regulator', 'Response to questions: 36-month stability data supports ≤ 1.5% — clock restarts', 'Task');
         infoRoundDone = true;
-        el('narration').innerHTML = '🔁 <strong>Question answered — clock restarted.</strong> Now pick a final decision: Approve or Reject.';
+        el('narration').innerHTML = '<strong>Question answered — clock restarted.</strong> Now pick a final decision: Approve or Reject.';
         setDecisionBtns(true);
       }
     } catch (e) {
-      el('narration').innerHTML = '⚠️ <strong>Decision failed:</strong> ' + esc(e && e.message ? e.message : String(e));
+      el('narration').innerHTML = '<strong>Decision failed:</strong> ' + esc(e && e.message ? e.message : String(e));
       setDecisionBtns(true);
     } finally {
       inFlight = false;
@@ -422,7 +422,7 @@
     var totalMs = (first && last) ? (last - first) : null;
     el('cycle-time').hidden = false;
     el('cycle-time').innerHTML =
-      '<div class="ct-head">⏱️ Cycle time — <strong>this run\'s real timestamps</strong> · every phase is now measured</div>' +
+      '<div class="ct-head">Cycle time — <strong>this run\'s real timestamps</strong> · every phase is now measured</div>' +
       '<div class="ct-bars">' + rowsHtml + '</div>' +
       '<div class="ct-total">Total (submit → decision): <strong>' + (totalMs != null ? esc(fmtElapsed(totalMs)) : '—') + '</strong></div>' +
       '<div class="ct-baseline">vs. <em>typical manual variation ≈ weeks</em> <span class="ct-illus">illustrative baseline — not a measured value</span></div>' +
@@ -499,31 +499,31 @@
   function openModal(html) { el('modal-body').innerHTML = html; el('modal').hidden = false; }
   function openJson(title, obj) { openModal('<h2 class="modal-title">' + esc(title) + '</h2><pre class="modal-json">' + APIX.highlight(obj) + '</pre>'); }
   function openDoc(kind) {
-    if (kind === 'pdf') openModal('<h2 class="modal-title">📄 Rendered eCTD 3.2.P.5.1 (PDF view)</h2>' + APIX.pqi.renderSpecHtml());
-    else if (kind === 'fhir') openJson('{ } PQI FHIR Bundle — Bundle-drug-product-specification-pq', APIX.pqi.bundle || APIX.pqi.normalize());
+    if (kind === 'pdf') openModal('<h2 class="modal-title">Rendered eCTD 3.2.P.5.1 (PDF view)</h2>' + APIX.pqi.renderSpecHtml());
+    else if (kind === 'fhir') openJson('PQI FHIR Bundle — Bundle-drug-product-specification-pq', APIX.pqi.bundle || APIX.pqi.normalize());
     else if (kind === 'validate') {
       var results = APIX.pqi.validate(batchKey);
       var anyFail = results.some(function (v) { return !v.pass; });
       var batchLabel = (APIX.pqi.batches[batchKey] || {}).label || batchKey;
       var rows = results.map(function (v) {
         return '<tr' + (v.pass ? '' : ' class="val-fail-row"') + '><td>' + esc(v.test) + '</td><td>' + esc(v.criterion) + '</td><td>' + esc(v.measured) +
-          '</td><td class="' + (v.pass ? 'pass' : 'fail') + '">' + (v.pass ? '✓ PASS' : '✗ FAIL') + '</td></tr>';
+          '</td><td class="' + (v.pass ? 'pass' : 'fail') + '">' + (v.pass ? 'PASS' : 'FAIL') + '</td></tr>';
       }).join('');
       var banner = anyFail
-        ? '<div class="val-banner val-banner-fail">✗ OUT OF SPECIFICATION — acceptance criterion breached</div>' +
+        ? '<div class="val-banner val-banner-fail">OUT OF SPECIFICATION — acceptance criterion breached</div>' +
           '<p class="val-punch">In the 300-page PDF this is buried; in the structured spec the acceptance criterion is <strong>machine-checked — caught at submit.</strong></p>'
-        : '<div class="val-banner val-banner-pass">✓ All acceptance criteria met</div>';
-      openModal('<h2 class="modal-title">✓ Structured validation — ' + esc(batchLabel) + ' vs. acceptance criteria</h2>' +
+        : '<div class="val-banner val-banner-pass">All acceptance criteria met</div>';
+      openModal('<h2 class="modal-title">Structured validation — ' + esc(batchLabel) + ' vs. acceptance criteria</h2>' +
         banner +
         '<p class="muted">Read directly from the PQI ObservationDefinitions — no transcription from a PDF.</p>' +
         '<table class="val-table"><thead><tr><th>Test</th><th>Criterion</th><th>Measured</th><th>Result</th></tr></thead><tbody>' + rows + '</tbody></table>');
     }
   }
   function openPeek(ref) {
-    if (ref === 'Task') openJson('{ } Task — Type IB variation', store.task);
-    else if (ref === 'notif') openJson('{ } Subscription notification Bundle', lastNotif);
-    else if (ref.indexOf('notif-') === 0) openJson('{ } Subscription notification Bundle', notifLog[+ref.slice(6)] || lastNotif);
-    else { var r = store.get(ref); if (r) openJson('{ } ' + r.resourceType + (r.content ? ' — ' + r.content[0].attachment.title : ''), r); }
+    if (ref === 'Task') openJson('Task — Type IB variation', store.task);
+    else if (ref === 'notif') openJson('Subscription notification Bundle', lastNotif);
+    else if (ref.indexOf('notif-') === 0) openJson('Subscription notification Bundle', notifLog[+ref.slice(6)] || lastNotif);
+    else { var r = store.get(ref); if (r) openJson(r.resourceType + (r.content ? ' — ' + r.content[0].attachment.title : ''), r); }
   }
 
   /* ---- store events ----------------------------------------------------- */
@@ -531,7 +531,7 @@
     if (ev.detail.firstTime) {
       var msg = 'Submitted Type IB variation (Task created)' +
         (store.taskUrl ? ' ' + verifyLinkHtml() : '');
-      convLine('out', '🏭 SynthPharma', '🏛️ Health Authority', msg, 'Task');
+      convLine('out', 'Industry', 'Regulator', msg, 'Task');
     } else if (!el('reg').hidden) {
       updateRegStatus(ev.detail.task);
     }
@@ -540,8 +540,8 @@
     lastNotif = ev.detail.bundle;
     var idx = notifLog.push(ev.detail.bundle) - 1;     // stable per-line peek target
     var msg = bizPlain(ev.detail.businessStatus);
-    flyChip('🔔 ' + APIX.display('businessStatus', ev.detail.businessStatus), 'left');
-    convLine('in', '🏛️ Health Authority', '🏭 SynthPharma', '🔔 ' + esc(msg), 'notif-' + idx);
+    flyChip('← ' + APIX.display('businessStatus', ev.detail.businessStatus), 'left');
+    convLine('in', 'Regulator', 'Industry', 'Notification: ' + esc(msg), 'notif-' + idx);
     setTimeout(function () { renderTracker(ev.detail.businessStatus, ev.detail.businessStatus); }, 520);
   });
 
@@ -588,12 +588,12 @@
     '<h2 class="modal-title">Real vs Simulated</h2>' +
     '<p class="muted">This demo is built on real, valid FHIR R5 — and you can verify it independently.</p>' +
     '<table class="val-table about-table"><thead><tr><th>Aspect</th><th>Status</th></tr></thead><tbody>' +
-    '<tr><td>FHIR R5 resources (Task, DocumentReference, Binary, Subscription, PQI Bundle)</td><td class="pass">✓ Real &amp; conformant</td></tr>' +
-    '<tr><td>Conformance to the APIX + PQI IGs</td><td class="pass">✓ Official HL7 validator (88 → 1 documented IG bug)</td></tr>' +
-    '<tr><td><strong>Live</strong> mode: POST / GET / $validate over the wire</td><td class="pass">✓ Real, against public hapi.fhir.org/baseR5</td></tr>' +
-    '<tr><td>Server-assigned ids, ETags, OperationOutcome</td><td class="pass">✓ Real (from the public server)</td></tr>' +
-    '<tr><td>OAuth2 / SMART Backend Services token</td><td class="sim">◐ Simulated (labeled; orthogonal to the exchange)</td></tr>' +
-    '<tr><td>Real-time push delivery</td><td class="sim">◐ Subscription is real; here the UI reads the Task back (production = rest-hook webhook)</td></tr>' +
+    '<tr><td>FHIR R5 resources (Task, DocumentReference, Binary, Subscription, PQI Bundle)</td><td class="pass">Real &amp; conformant</td></tr>' +
+    '<tr><td>Conformance to the APIX + PQI IGs</td><td class="pass">Official HL7 validator (88 → 1 documented IG bug)</td></tr>' +
+    '<tr><td><strong>Live</strong> mode: POST / GET / $validate over the wire</td><td class="pass">Real, against public hapi.fhir.org/baseR5</td></tr>' +
+    '<tr><td>Server-assigned ids, ETags, OperationOutcome</td><td class="pass">Real (from the public server)</td></tr>' +
+    '<tr><td>OAuth2 / SMART Backend Services token</td><td class="sim">Simulated (labeled; orthogonal to the exchange)</td></tr>' +
+    '<tr><td>Real-time push delivery</td><td class="sim">Subscription is real; here the UI reads the Task back (production = rest-hook webhook)</td></tr>' +
     '</tbody></table>' +
     '<p class="muted">Mock mode is the stage default: fully offline, deterministic, instant. Live mode talks to a shared public server whose data is periodically auto-wiped.</p>';
 
