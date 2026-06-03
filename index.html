@@ -36,6 +36,9 @@
   <nav class="spine" id="spine" aria-label="Submission status"></nav>
 
   <main class="stage">
+    <!-- Subscription notification crossing cue (between the panes) -->
+    <div class="xing" id="xing" hidden aria-live="polite"></div>
+
     <div class="panes">
 
       <!-- ===================== INDUSTRY — SynthPharma AG ===================== -->
@@ -47,9 +50,13 @@
         </div>
         <div class="pane-body" id="ind-body">
 
+          <!-- Per-side workflow (the driver for this pane) -->
+          <ol class="flow" id="ind-flow" aria-label="Company workflow"></ol>
+
           <!-- ① Author -->
           <div class="stage-block" id="ind-author" hidden>
             <div class="block-label">① Author</div>
+            <div class="src-legend" id="src-legend"></div>
             <div class="harmonize" id="harmonize"></div>
           </div>
 
@@ -90,6 +97,10 @@
           <div class="empty-state" id="ha-empty">Awaiting submission</div>
 
           <div id="ha-content" hidden>
+
+            <!-- Per-side workflow (the driver for this pane) -->
+            <ol class="flow" id="ha-flow" aria-label="Regulator workflow"></ol>
+
             <!-- ① Received -->
             <div class="stage-block" id="ha-received">
               <div class="block-label">① Received</div>
@@ -107,20 +118,8 @@
               </div>
               <div class="review-actions">
                 <button data-doc="pdf">Open PDF</button>
-                <button data-doc="validate" class="btn-accent">Validate structured data</button>
               </div>
               <div id="review-result"></div>
-            </div>
-
-            <!-- ③ Decide -->
-            <div class="stage-block" id="ha-decide" hidden>
-              <div class="block-label">③ Decide</div>
-              <div class="decide-hint" id="decide-hint"></div>
-              <div class="decision-btns" id="decision-btns">
-                <button class="dec-btn dec-approve" data-decision="approve">Approve</button>
-                <button class="dec-btn dec-info" data-decision="info">Request information</button>
-                <button class="dec-btn dec-reject" data-decision="reject">Reject</button>
-              </div>
             </div>
 
             <div id="reg-outputs"></div>
@@ -135,9 +134,8 @@
     <div class="summary" id="summary" hidden></div>
   </main>
 
-  <!-- ===================== FOOTER (the single driver) ===================== -->
+  <!-- ===================== FOOTER (Reset + tiny progress) ================== -->
   <footer class="controls">
-    <button id="stepbtn" class="btn-primary">Author specification</button>
     <span id="progress" class="progress"></span>
     <button id="resetbtn" class="btn-ghost">Reset</button>
   </footer>

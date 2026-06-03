@@ -24,6 +24,11 @@
   --amber-bg: #fbf4e0;
   --red-bg: #f8e7e6;
   --radius: 4px;
+  /* data-origin colors (Author assembly) — reuse the sober status tokens:
+     LIMS = blue (--link) · Stability = green (--green) · Method = amber (--amber). */
+  --org-lims: #337ab7;
+  --org-stab: #2e7d32;
+  --org-meth: #946c00;
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -206,7 +211,69 @@ code, pre, .mono { font-family: Consolas, "Lucida Console", "Courier New", monos
 .review-actions .btn-accent { border-color: var(--line-strong); color: var(--navy); }
 .val-sub { font-size: 12px; color: var(--ink-soft); margin: 10px 0 8px; }
 
-/* ---------- controls (the single driver: one action button) ---------- */
+/* ---------- per-side workflow (the driver) ---------- */
+.flow { list-style: none; margin: 0 0 4px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.flow:empty { display: none; }
+.fl-item { display: flex; align-items: flex-start; gap: 10px; }
+.fl-mark { width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--line); background: var(--bg);
+  display: grid; place-items: center; font-size: 9px; color: transparent; flex-shrink: 0; margin-top: 3px; }
+.fl-mark.fl-done { background: var(--green); border-color: var(--green); color: #fff; }
+.fl-mark.fl-done::after { content: "\2713"; }
+.fl-mark.fl-live { border-color: var(--navy); background: var(--navy); }
+.fl-body { flex: 1; min-width: 0; }
+.fl-label { font-size: 13px; color: var(--ink); padding-top: 1px; }
+.fl-done .fl-label { color: var(--ink-soft); }
+.fl-pending .fl-label { color: var(--ink-soft); }
+.fl-wait { font-size: 11.5px; color: var(--ink-soft); font-style: italic; margin-top: 2px; }
+.fl-action { margin-top: 0; }
+
+/* ---------- subscription-notification crossing cue (between the panes) ---------- */
+.xing { position: absolute; top: 6px; left: 50%; transform: translateX(-50%); z-index: 40;
+  display: inline-flex; align-items: center; gap: 8px; pointer-events: none;
+  background: var(--box-bg); border: 1px solid var(--box-border); border-radius: 999px;
+  padding: 5px 13px; font-size: 12px; opacity: 0; }
+.xing.show { animation: xing-cross 1500ms ease both; }
+.xing-tag { font-family: Consolas, monospace; font-size: 10.5px; font-weight: 700; color: var(--navy);
+  text-transform: uppercase; letter-spacing: .4px; }
+.xing-arrow { color: var(--navy); font-weight: 700; }
+.xing-dest { font-size: 12px; font-weight: 700; color: var(--ink); }
+.xing-msg { font-size: 11.5px; color: var(--ink-soft); border-left: 1px solid var(--line); padding-left: 8px; }
+@keyframes xing-cross {
+  0% { opacity: 0; transform: translateX(-50%) translateY(-4px); }
+  18% { opacity: 1; transform: translateX(-50%) translateY(0); }
+  82% { opacity: 1; transform: translateX(-50%) translateY(0); }
+  100% { opacity: 0; transform: translateX(-50%) translateY(2px); }
+}
+.stage { position: relative; }
+/* the receiving pane briefly emphasizes */
+.pane.recv { animation: pane-recv 900ms ease both; }
+@keyframes pane-recv {
+  0% { border-color: var(--navy); background: var(--box-bg); }
+  100% { border-color: var(--line); background: var(--bg); }
+}
+
+/* ---------- Author · data-origin legend + color-coded assembly ---------- */
+.src-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
+.src-legend:empty { display: none; }
+.src-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--ink-soft); }
+.src-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.org-lims .src-dot, .org-lims.src-dot { background: var(--org-lims); }
+.org-stab .src-dot, .org-stab.src-dot { background: var(--org-stab); }
+.org-meth .src-dot, .org-meth.src-dot { background: var(--org-meth); }
+/* tint each datum by origin: a subtle colored left-border (not a full fill) */
+.spec-table .org-cell { border-left-width: 3px; }
+.spec-table .org-cell.org-lims { border-left-color: var(--org-lims); }
+.spec-table .org-cell.org-stab { border-left-color: var(--org-stab); }
+.spec-table .org-cell.org-meth { border-left-color: var(--org-meth); }
+.spec-table .org-th { border-bottom-width: 3px; }
+.spec-table .org-th.org-lims { border-bottom-color: var(--org-lims); }
+.spec-table .org-th.org-stab { border-bottom-color: var(--org-stab); }
+.spec-table .org-th.org-meth { border-bottom-color: var(--org-meth); }
+/* gentle staggered assembly reveal (no bounce) */
+.spec-table tr.asm { opacity: 0; transform: translateY(3px); transition: opacity 180ms ease, transform 180ms ease; }
+.spec-table tr.asm.in { opacity: 1; transform: none; }
+
+/* ---------- controls (Reset + tiny progress) ---------- */
 .controls { display: flex; align-items: center; gap: 14px; padding: 12px 24px; background: var(--bg); border-top: 1px solid var(--line); }
 .progress { flex: 1; font-size: 12px; color: var(--ink-soft); font-family: Consolas, monospace; }
 .btn-primary { cursor: pointer; border: 1px solid #2e6da4; border-radius: var(--radius); padding: 8px 18px;

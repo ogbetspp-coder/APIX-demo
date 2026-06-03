@@ -1,31 +1,56 @@
 /*
- * UI controller — two role panes + a shared status spine, one prominent action
- * at a time, one Inspect slide-over for all FHIR / API detail.
+ * UI controller — two role panes, each driving its OWN workflow (the ping-pong),
+ * a shared status spine, and one Inspect slide-over for all FHIR / API detail.
  *
  * The FHIR data layer (APIX.store / APIX.client / APIX.pqi / APIX.terminology)
  * is unchanged; this file only renders it. Layout:
  *   - STATUS SPINE  : Draft → Submitted → Received → Validated → Assessing → Decision
- *   - INDUSTRY pane : ① Author (harmonize + consolidated spec) ② Submit ③ Track
- *   - HA pane       : ① Received ② Review (PDF / validate) ③ Decide
- *   - FOOTER        : one primary action button (the verb is the only guidance)
- *                     + tiny progress + Reset; parks for the decision
+ *   - INDUSTRY pane : workflow ① Author ② Submit (· Send answers) + spec/track
+ *   - HA pane       : workflow ① Validate ② Decision + received/review
+ *   - FOOTER        : tiny progress + Reset (no global driver)
  *   - INSPECT       : focus resource/request + running 'io' call list
  *
- * Show, don't tell: no narration paragraph, no per-step captions. The flow reads
- * from the structural labels + the single action button alone. Four deliberate
- * user actions (Author → Submit → Validate → Decide); the spine still advances
- * through every node, some automatically.
+ * Per-side workflows (the driver): each pane shows its steps as a short ordered
+ * list. The one actionable step on the side whose TURN it is renders as a single
+ * live primary button; completed steps show a check; the waiting side's next
+ * step shows a muted "Waiting for …" state. At most one live action on screen.
+ * Clicking a side's button runs its handler, advances the single FHIR Task, and
+ * PASSES THE TURN: a brief "Subscription notification →" cue crosses between the
+ * panes and lights up the other side's next button.
+ *
+ * Flow: Author → Submit → (Regulator auto-"Received") → Validate → Decision.
+ *   Request information → clock-stop, turn → Industry "Send answers" → clock
+ *   restart, turn → Regulator Decision. Approve / Reject → terminal Summary.
  */
 (function () {
   var store = APIX.store;
-  var S = APIX.scenario;
-  var i = 0;                  // current step index
+
+  /* ---- Per-side workflow state machine ---------------------------------- *
+   * `turn`  = the side whose action is live ('ind' | 'ha' | null at terminal)
+   * `phase` = the live step key (author | submit | validate | decision |
+   *           answers | done)
+   * `done`  = step key -> true once completed (renders a check)             */
+  var turn = 'ind';
+  var phase = 'author';
+  var done = {};
+  var infoAsked = false;       // a Request-information round has been issued
+
+  /* The two per-side workflows. `key` is the live-step key; `actor` drives the
+   * pane emphasis; `button` is the clean business verb shown when live.
+   * `info`-only steps (Send answers) are revealed conditionally.            */
+  var IND_FLOW = [
+    { key: 'author', label: 'Author specification', button: 'Author specification' },
+    { key: 'submit', label: 'Submit application', button: 'Submit application' },
+    { key: 'answers', label: 'Send answers', button: 'Send answers', conditional: true }
+  ];
+  var HA_FLOW = [
+    { key: 'validate', label: 'Validate', button: 'Validate' },
+    { key: 'decision', label: 'Decision', button: null }   // renders the 3 decision buttons
+  ];
 
   var reached = {};          // businessStatus code -> Date reached (spine + cycle time)
   var lastNotif = null;      // most recent notification Bundle (Inspect focus)
   var inFlight = false;      // a step handler is awaiting (live latency guard)
-  var decisionPending = false; // ▶ engine has handed off to the HA decision buttons
-  var infoRoundDone = false; // a Request-information Q&A loop has already completed
 
   var ioEntries = [];        // captured { request, response } interactions
   var auditEntries = [];     // FHIR Provenance audit log (21 CFR Part 11 / ALCOA)
@@ -38,9 +63,6 @@
   function show(id) { el(id).hidden = false; }
   function hide(id) { el(id).hidden = true; }
 
-  /* Which actor owns a step (drives the subtle pane emphasis). */
-  function actorOf(step) { return step ? step.actor : null; }
-
   /* ============================ STATUS SPINE =============================== */
   /* Draft/Author → businessStatusFlow → Decision. The whole exchange is just
      this advancing: current navy, reached get a check + timestamp, future muted. */
@@ -48,30 +70,28 @@
     .concat(APIX.businessStatusFlow.map(function (m) { return { code: m.code, label: m.label }; }))
     .concat([{ code: 'decision', label: 'Decision' }]);
 
-  /* Resolve which spine node is "current" from the step about to run. */
+  /* Resolve which spine node is "current" from the live phase. */
   function spineCurrent() {
-    var step = S[i];
-    if (!step) return reached['rejected'] ? 'decision' : 'decision';
-    switch (step.effect.type) {
+    switch (phase) {
       case 'author': case 'submit': return 'draft';
-      case 'decide': return 'decision';
-      case 'updateTask': return step.effect.businessStatus;
-      default: return 'draft';
+      case 'validate': return 'validation-successful';
+      case 'decision': case 'answers': return 'decision';
+      default: return 'decision';
     }
   }
 
   function renderSpine() {
     var cur = spineCurrent();
     var html = SPINE.map(function (n) {
-      var done = (n.code === 'draft')
-        ? (i > 1 || !!reached['submitted'])               // Draft is "done" once we've submitted
+      var doneNode = (n.code === 'draft')
+        ? (!!done.submit || !!reached['submitted'])       // Draft is "done" once we've submitted
         : (n.code === 'decision')
           ? (!!reached['approved'] || !!reached['rejected'])
           : !!reached[n.code];
-      var isCur = (n.code === cur) && !done;
+      var isCur = (n.code === cur) && !doneNode;
       var ts = (n.code !== 'draft' && n.code !== 'decision' && reached[n.code])
         ? reached[n.code].toLocaleTimeString() : '';
-      var cls = 'sp-node' + (done ? ' done' : '') + (isCur ? ' cur' : '');
+      var cls = 'sp-node' + (doneNode ? ' done' : '') + (isCur ? ' cur' : '');
       return '<div class="' + cls + '">' +
         '<span class="sp-mark"></span>' +
         '<span class="sp-lbl">' + esc(n.label) + '</span>' +
@@ -82,71 +102,144 @@
   }
 
   /* ======================= PANE EMPHASIS (calm) =========================== */
-  function setActivePane(actor) {
-    el('pane-ind').classList.toggle('is-active', actor === 'applicant');
-    el('pane-ha').classList.toggle('is-active', actor === 'regulator');
+  function setActivePane(side) {
+    el('pane-ind').classList.toggle('is-active', side === 'ind');
+    el('pane-ha').classList.toggle('is-active', side === 'ha');
   }
 
-  /* ============================ CONTROLS ================================== */
+  /* ============================ FLOW RENDERING ============================ */
+  /* Render one pane's ordered workflow list. At most one step is "live" — the
+     next-undone step on the side whose TURN it is. Completed steps show a check;
+     the waiting side's next step shows a muted "Waiting for …" state. */
+  function flowItemHtml(step, state, side) {
+    var mark = state === 'done' ? '<span class="fl-mark fl-done"></span>'
+      : state === 'live' ? '<span class="fl-mark fl-live"></span>'
+      : '<span class="fl-mark"></span>';
+    var body;
+    if (state === 'live') {
+      if (step.key === 'decision') {
+        body = '<div class="fl-label">' + esc(step.label) + '</div>' +
+          '<div class="decision-btns" id="decision-btns">' +
+            '<button class="dec-btn dec-approve" data-decision="approve">Approve</button>' +
+            '<button class="dec-btn dec-info" data-decision="info"' + (infoAsked ? ' disabled' : '') + '>Request information</button>' +
+            '<button class="dec-btn dec-reject" data-decision="reject">Reject</button>' +
+          '</div>';
+      } else {
+        body = '<button class="btn-primary fl-action" data-flow="' + esc(step.key) + '">' + esc(step.button) + '</button>';
+      }
+    } else if (state === 'waiting') {
+      var other = side === 'ind' ? 'the Regulator' : 'SynthPharma';
+      body = '<div class="fl-label">' + esc(step.label) + '</div>' +
+        '<div class="fl-wait">Waiting for ' + other + '</div>';
+    } else {
+      body = '<div class="fl-label">' + esc(step.label) + '</div>';
+    }
+    return '<li class="fl-item fl-' + state + '">' + mark + '<div class="fl-body">' + body + '</div></li>';
+  }
+
+  /* Compute each step's state for one side. The live step is rendered only when
+     it is that side's TURN and no handler is in flight. */
+  function renderFlow(side) {
+    var flow = side === 'ind' ? IND_FLOW : HA_FLOW;
+    var listEl = el(side === 'ind' ? 'ind-flow' : 'ha-flow');
+    var isTurn = (turn === side) && !inFlight;
+    var liveFound = false;
+    var html = flow.map(function (step) {
+      if (step.conditional && step.key === 'answers' && !infoAsked) return '';   // hidden until asked
+      var state;
+      if (done[step.key]) {
+        state = 'done';
+      } else if (!liveFound) {
+        // first undone step on this side
+        if (step.key === phase && isTurn) { state = 'live'; liveFound = true; }
+        else if (step.key === phase && !isTurn) { state = 'waiting'; liveFound = true; }
+        else { state = 'pending'; liveFound = true; }
+      } else {
+        state = 'pending';
+      }
+      return flowItemHtml(step, state, side);
+    }).join('');
+    listEl.innerHTML = html;
+  }
+
   function refreshControls() {
     renderSpine();
-    if (decisionPending) { lockStepForDecision(); return; }
-    var step = S[i];
-    if (step) {
-      setActivePane(actorOf(step));
-      el('stepbtn').textContent = step.button;
-      el('stepbtn').disabled = false;
-      el('progress').textContent = 'Step ' + (i + 1) + ' / ' + S.length;
-    } else {
-      setActivePane(null);
-      el('stepbtn').textContent = 'Done';
-      el('stepbtn').disabled = true;
-      el('progress').textContent = 'Complete';
-    }
+    renderFlow('ind');
+    renderFlow('ha');
+    setActivePane(inFlight ? null : turn);
+    var label = phase === 'done' ? 'Complete'
+      : (turn === 'ind' ? 'SynthPharma' : 'Health Authority') + ' · ' + phase;
+    el('progress').textContent = label;
   }
 
-  /* While the decision is the regulator's, the ▶ engine is parked: the footer
-     button is disabled and the three HA Decide buttons drive the transition.
-     The only hand-off hint is the Decide section heading on the HA pane. */
-  function lockStepForDecision() {
-    setActivePane('regulator');
-    el('stepbtn').textContent = 'Awaiting decision';
-    el('stepbtn').disabled = true;
+  /* ===================== TURN HAND-OFF + CROSSING CUE ==================== */
+  /* Pass the turn to the other side, with a brief, labeled "Subscription
+     notification →" cue crossing between the panes. The receiving pane then
+     briefly emphasizes (handled by the .recv pulse). */
+  function crossNotification(toSide, label) {
+    var x = el('xing');
+    x.className = 'xing xing-' + toSide;
+    x.innerHTML = '<span class="xing-tag">Subscription notification</span>' +
+      '<span class="xing-arrow">→</span>' +
+      '<span class="xing-dest">' + (toSide === 'ha' ? 'Regulator' : 'SynthPharma') + '</span>' +
+      (label ? '<span class="xing-msg">' + esc(label) + '</span>' : '');
+    x.hidden = false;
+    // re-trigger the CSS animation
+    void x.offsetWidth;
+    x.classList.add('show');
+    setTimeout(function () {
+      x.classList.remove('show');
+      x.hidden = true;
+      var pane = el(toSide === 'ha' ? 'pane-ha' : 'pane-ind');
+      pane.classList.add('recv');
+      setTimeout(function () { pane.classList.remove('recv'); }, 900);
+    }, 1500);
   }
 
-  /* Run the current step. Handlers may be async (live mode does real network
-     I/O); await before advancing `i`, and guard against a fast double-click. */
-  async function runStep() {
-    if (inFlight || decisionPending) return;
-    var step = S[i];
-    if (!step) return;
+  /* Advance the state machine to a new phase owned by `side`, marking `prevKey`
+     done, then render. When `notifTo` is set, cross the notification cue. */
+  function passTurn(prevKey, nextPhase, nextTurn, notifTo, notifLabel) {
+    if (prevKey) done[prevKey] = true;
+    phase = nextPhase;
+    turn = nextTurn;
+    if (notifTo) crossNotification(notifTo, notifLabel);
+    refreshControls();
+  }
 
+  /* ============================ FLOW DISPATCH ============================ */
+  /* A side's live button was clicked. Run its handler (async; live mode does
+     real network I/O), guard against a fast double-click, then pass the turn. */
+  async function runFlow(key) {
+    if (inFlight || done[key]) return;
+    if (key !== phase) return;
     inFlight = true;
-    var btn = el('stepbtn');
-    btn.disabled = true; btn.classList.add('busy');
-
+    refreshControls();   // hides the live button while awaiting
     try {
-      switch (step.effect.type) {
-        case 'author': handleAuthor(); break;
-        case 'submit': await handleSubmit(); break;
-        case 'updateTask':
-          await store.updateTask(step.effect);
-          afterRegStep(step);
-          break;
-        case 'decide':
-          await handleAssess();        // under-assessment, automatically
-          show('ha-decide');
-          decisionPending = true;
-          break;   // leave `i` unchanged; refreshControls() locks ▶
+      if (key === 'author') {
+        handleAuthor();
+        passTurn('author', 'submit', 'ind');           // same side, no notification
+      } else if (key === 'submit') {
+        await handleSubmit();
+        // Submit → Task created + auto-"Received" by the Regulator. The receipt
+        // notification crosses to the Regulator, lighting up its Validate.
+        passTurn('submit', 'validate', 'ha', 'ha', 'Received');
+      } else if (key === 'validate') {
+        await handleValidate();
+        // Validate is the Regulator's own action; the turn stays on the HA side,
+        // advancing to its Decision (no cross-pane notification).
+        passTurn('validate', 'decision', 'ha');
+      } else if (key === 'answers') {
+        await handleAnswers();
+        // Clock restarts; the response notification crosses back to the
+        // Regulator's Decision.
+        passTurn('answers', 'decision', 'ha', 'ha', 'Under assessment');
       }
-      if (!decisionPending) i += 1;
     } catch (e) {
       flashError('Step failed');
     } finally {
       inFlight = false;
-      btn.classList.remove('busy');
+      refreshControls();
     }
-    refreshControls();
   }
 
   /* ============================ INDUSTRY ① Author ======================== */
@@ -157,11 +250,28 @@
     return esc(rel);
   }
 
-  /* Author — one action: reveal the harmonize mapping table (each row fires a
-     real ConceptMap/$translate, visible in Inspect) AND the consolidated ONE
-     structured specification (merges the old pull/harmonize/consolidate beats). */
+  /* Source systems, each given a sober origin color (from existing tokens) so a
+     viewer sees which datum came from where as the spec is assembled:
+       LIMS = blue (--link) · Stability = green (--green) · Method = amber (--amber). */
+  var SOURCES = [
+    { key: 'lims',  cls: 'org-lims',  label: 'LIMS' },
+    { key: 'stab',  cls: 'org-stab',  label: 'Stability System' },
+    { key: 'meth',  cls: 'org-meth',  label: 'Method Repository' }
+  ];
+
+  function renderLegend() {
+    el('src-legend').innerHTML = SOURCES.map(function (s) {
+      return '<span class="src-chip ' + s.cls + '"><span class="src-dot"></span>' + esc(s.label) + '</span>';
+    }).join('');
+  }
+
+  /* Author — one action: reveal the colored source legend, the harmonize
+     mapping table (each row fires a real ConceptMap/$translate, visible in
+     Inspect), AND the consolidated ONE structured specification, assembled with
+     a gentle staggered reveal and tinted by data origin. */
   function handleAuthor() {
     show('ind-author');
+    renderLegend();
     var rows = APIX.terminology.rows();
     el('harmonize').innerHTML =
       '<table class="grid map-table"><thead><tr>' +
@@ -180,7 +290,7 @@
         setTimeout(function () {
           node.classList.add('in');
           APIX.client.translate(row.source.system, row.source.code);
-        }, 280 * n + 80);
+        }, 160 * n + 80);
       })(r, tr);
     });
     APIX.pqi.normalize();
@@ -189,28 +299,43 @@
   }
 
   /* Consolidated spec — compact table with the one changed row highlighted, plus
-     an inline Document⇄FHIR toggle. */
+     an inline Document⇄FHIR toggle. In Document view each datum is tinted by its
+     origin (Release ← LIMS, End-of-shelf-life ← Stability, Method ← Method repo)
+     via a subtle colored left-border + dot, and revealed with a gentle stagger. */
   function renderConsolidated() {
     el('spec-seg').querySelector('[data-mode="doc"]').classList.toggle('on', specMode === 'doc');
     el('spec-seg').querySelector('[data-mode="fhir"]').classList.toggle('on', specMode === 'fhir');
     var body;
     if (specMode === 'fhir') {
       body = '<pre class="modal-json cons-json">' + APIX.highlight(APIX.pqi.bundle || APIX.pqi.normalize()) + '</pre>';
-    } else {
-      var rows = APIX.pqi.specRows().map(function (r) {
-        var shelf = r.changed
-          ? '<span class="diff-old">' + esc(r.before) + '</span> <span class="diff-new">' + esc(r.shelfLife) + ' w/w</span>'
-          : esc(r.shelfLife);
-        return '<tr' + (r.changed ? ' class="row-changed"' : '') + '>' +
-          '<td>' + esc(r.test) + '</td><td>' + esc(r.release) + '</td><td>' + shelf + '</td></tr>';
-      }).join('');
-      body =
-        '<p class="cons-change"><span class="chg-tag">Change</span> <strong>' + esc(APIX.pqi.CHANGE.label) + '</strong> ' +
-          '<span class="diff-old">' + esc(APIX.pqi.CHANGE.before) + '</span> → <span class="diff-new">' + esc(APIX.pqi.CHANGE.after) + '</span></p>' +
-        '<table class="grid spec-table"><thead><tr><th>Test</th><th>Release</th><th>End of shelf life</th></tr></thead>' +
-          '<tbody>' + rows + '</tbody></table>';
+      el('consolidated').innerHTML = body;
+      return;
     }
+    var rows = APIX.pqi.specRows().map(function (r) {
+      var shelf = r.changed
+        ? '<span class="diff-old">' + esc(r.before) + '</span> <span class="diff-new">' + esc(r.shelfLife) + ' w/w</span>'
+        : esc(r.shelfLife);
+      return '<tr' + (r.changed ? ' class="row-changed"' : '') + '>' +
+        '<td>' + esc(r.test) + '</td>' +
+        '<td class="org-cell org-meth">' + esc(r.method) + '</td>' +
+        '<td class="org-cell org-lims">' + esc(r.release) + '</td>' +
+        '<td class="org-cell org-stab">' + shelf + '</td></tr>';
+    }).join('');
+    body =
+      '<p class="cons-change"><span class="chg-tag">Change</span> <strong>' + esc(APIX.pqi.CHANGE.label) + '</strong> ' +
+        '<span class="diff-old">' + esc(APIX.pqi.CHANGE.before) + '</span> → <span class="diff-new">' + esc(APIX.pqi.CHANGE.after) + '</span></p>' +
+      '<table class="grid spec-table"><thead><tr><th>Test</th>' +
+        '<th class="org-th org-meth">Method</th>' +
+        '<th class="org-th org-lims">Release</th>' +
+        '<th class="org-th org-stab">End of shelf life</th></tr></thead>' +
+        '<tbody>' + rows + '</tbody></table>';
     el('consolidated').innerHTML = body;
+    // gentle staggered assembly reveal
+    var trs = el('consolidated').querySelectorAll('.spec-table tbody tr');
+    [].forEach.call(trs, function (tr, n) {
+      tr.classList.add('asm');
+      setTimeout(function () { tr.classList.add('in'); }, 130 * n + 60);
+    });
   }
 
   /* ============================ INDUSTRY ②/③ ============================= */
@@ -270,6 +395,15 @@
     el('feed').scrollTop = el('feed').scrollHeight;
   }
 
+  /* Send answers — the applicant's response-to-questions. Re-stamps Task.code
+     and restarts the clock (clock-stop → under-assessment), returning the turn
+     to the Regulator's Decision. */
+  async function handleAnswers() {
+    await store.updateTask({ type: 'updateTask', status: 'in-progress', businessStatus: 'under-assessment', taskCode: 'response-to-questions' });
+    feed('Answered list of questions', 'notif');
+    revealRegulator();
+  }
+
   /* ============================ HEALTH AUTHORITY ========================== */
   function revealRegulator() {
     if (!store.task) return;
@@ -294,26 +428,19 @@
     }
   }
 
-  /* After a regulator updateTask step: reveal/advance the HA workflow blocks.
-     The Validate action (key 'validate') reveals the Review block with the
-     Good/Bad batch teeth. */
-  function afterRegStep(step) {
+  /* ============================ HA ① Validate ============================ */
+  /* Validate — the regulator's first action: PUT the Task to
+     validation-successful (with the validation-report output), reveal the Review
+     block (Good/Bad batch teeth), then pass the turn to its own Decision. */
+  async function handleValidate() {
+    await store.updateTask({ type: 'updateTask', status: 'accepted', businessStatus: 'validation-successful', addOutputs: ['validation'], flexibility: true });
     revealRegulator();
-    if (step.key === 'validate') { show('ha-review'); }
-  }
+    show('ha-review');
+    renderValidation();   // machine-check the tested batch against the structured criteria
 
-  /* Decide — under-assessment first (automatically), then the decision branch. */
-  async function handleAssess() {
+    // under-assessment immediately, so the spine reflects the Decision phase.
     await store.updateTask({ type: 'updateTask', status: 'in-progress', businessStatus: 'under-assessment' });
     revealRegulator();
-  }
-
-  /* Surface a transient error without a footer narration line: a brief tag on
-     the action button (the flow has no telling sentences). */
-  function flashError(msg) {
-    var btn = el('stepbtn');
-    btn.textContent = msg;
-    setTimeout(refreshControls, 2400);
   }
 
   /* Review — read the spec, validate the structured data with Good/Bad teeth. */
@@ -326,8 +453,6 @@
     if (kind === 'pdf') {
       inspectFocus('Rendered eCTD 3.2.P.5.1 (PDF view)', APIX.pqi.renderSpecHtml(), true);
       openInspect();
-    } else if (kind === 'validate') {
-      renderValidation();
     }
   }
   function renderValidation() {
@@ -349,48 +474,51 @@
         '<tbody>' + rows + '</tbody></table>';
   }
 
-  /* Decide — three real APIX outcomes (preserve decisionPending handoff). */
-  function setDecisionBtns(enabled) {
-    [].forEach.call(el('decision-btns').children, function (b) { b.disabled = !enabled; });
-  }
+  /* ============================ HA ② Decision =========================== */
+  /* Three real APIX outcomes. Approve / Reject are terminal → Summary.
+     Request information → clock-stop, the notification crosses to Industry, and
+     Industry's "Send answers" lights up. */
   function finishDecision() {
-    decisionPending = false;
-    hide('ha-decide');
-    i = S.length;                      // past the last step → completion
+    phase = 'done';
+    turn = null;
     refreshControls();
-    setTimeout(renderSummary, 700);    // terminal tracker stamp lands ~520ms after
+    setTimeout(renderSummary, 700);
   }
   async function onDecision(kind) {
-    if (!decisionPending || inFlight) return;
-    inFlight = true; setDecisionBtns(false);
+    if (phase !== 'decision' || turn !== 'ha' || inFlight) return;
+    inFlight = true; refreshControls();
     try {
       if (kind === 'approve') {
         await store.updateTask({ type: 'updateTask', status: 'completed', businessStatus: 'approved', taskCode: 'approval', addOutputs: ['approval', 'assessment'] });
+        done.decision = true;
+        crossNotification('ind', 'Approved');
         finishDecision();
       } else if (kind === 'reject') {
         await store.updateTask({ type: 'updateTask', status: 'completed', businessStatus: 'rejected', taskCode: 'rejection', addOutputs: ['rejection'] });
+        done.decision = true;
+        crossNotification('ind', 'Rejected');
         finishDecision();
       } else if (kind === 'info') {
-        if (infoRoundDone) { setDecisionBtns(true); return; }
+        if (infoAsked) return;
         await store.updateTask({ type: 'updateTask', status: 'on-hold', businessStatus: 'clock-stop', taskCode: 'information-request' });
-        await store.updateTask({ type: 'updateTask', status: 'in-progress', businessStatus: 'under-assessment', taskCode: 'response-to-questions' });
-        infoRoundDone = true;
-        decideHint('Clock restarted');
-        setDecisionBtns(true);
+        infoAsked = true;
+        revealRegulator();
+        // The clock-stop crosses to Industry; its "Send answers" lights up.
+        passTurn(null, 'answers', 'ind', 'ind', 'List of questions');
       }
     } catch (e) {
-      decideHint('Decision failed');
-      setDecisionBtns(true);
+      flashError('Decision failed');
     } finally {
       inFlight = false;
+      refreshControls();
     }
   }
 
-  /* A tiny inline hint on the HA Decide section (replaces the footer paragraph
-     hand-off). */
-  function decideHint(text) {
-    var h = el('decide-hint');
-    if (h) h.textContent = text;
+  /* Surface a transient error without a footer narration line: a brief flag on
+     the progress text (the flow has no telling sentences). */
+  function flashError(msg) {
+    el('progress').textContent = msg;
+    setTimeout(refreshControls, 2400);
   }
 
   /* ===================== END SUMMARY (terminal only) ===================== */
@@ -573,17 +701,19 @@
 
   /* ============================ RESET =================================== */
   function resetAll() {
-    i = 0; reached = {}; lastNotif = null; ioEntries = []; auditEntries = [];
-    decisionPending = false; infoRoundDone = false;
+    turn = 'ind'; phase = 'author'; done = {}; infoAsked = false;
+    reached = {}; lastNotif = null; ioEntries = []; auditEntries = [];
+    inFlight = false;
     batchKey = 'good'; specMode = 'doc';
     store.reset();
     renderAudit();
-    ['ind-author', 'ind-spec', 'ind-pkg', 'ind-track', 'ha-content', 'ha-review', 'ha-decide', 'summary'].forEach(hide);
+    el('xing').hidden = true; el('xing').className = 'xing';
+    el('pane-ind').classList.remove('recv'); el('pane-ha').classList.remove('recv');
+    ['ind-author', 'ind-spec', 'ind-pkg', 'ind-track', 'ha-content', 'ha-review', 'summary'].forEach(hide);
     show('ha-empty');
-    ['harmonize', 'consolidated', 'pkg', 'feed', 'reg-docs', 'reg-status', 'reg-outputs', 'review-result', 'io-list'].forEach(function (id) { el(id).innerHTML = ''; });
-    decideHint('');
+    ['ind-flow', 'ha-flow', 'harmonize', 'src-legend', 'consolidated', 'pkg', 'feed', 'reg-docs', 'reg-status', 'reg-outputs', 'review-result', 'io-list'].forEach(function (id) { el(id).innerHTML = ''; });
     setIoCount(); closeInspect();
-    setBatch('good'); setDecisionBtns(true);
+    setBatch('good');
     refreshControls();
   }
 
@@ -672,13 +802,13 @@
     var sum = ev.target.closest('.io-sum');
     if (sum) { var det = sum.parentNode.querySelector('.io-detail'); if (det) det.hidden = !det.hidden; return; }
     var ins = ev.target.closest('[data-inspect]'); if (ins) { inspectKey(ins.getAttribute('data-inspect')); return; }
+    var fa = ev.target.closest('[data-flow]'); if (fa) { runFlow(fa.getAttribute('data-flow')); return; }
     var b = ev.target.closest('[data-batch]'); if (b) { setBatch(b.getAttribute('data-batch')); if (el('review-result').innerHTML) renderValidation(); return; }
     var dec = ev.target.closest('[data-decision]'); if (dec) { onDecision(dec.getAttribute('data-decision')); return; }
     var m = ev.target.closest('[data-mode]'); if (m) { specMode = m.getAttribute('data-mode'); renderConsolidated(); return; }
     var d = ev.target.closest('[data-doc]'); if (d) { openDoc(d.getAttribute('data-doc')); return; }
   });
 
-  el('stepbtn').addEventListener('click', runStep);
   el('resetbtn').addEventListener('click', resetAll);
   el('inspect-toggle').addEventListener('click', toggleInspect);
   el('inspect-close').addEventListener('click', closeInspect);
