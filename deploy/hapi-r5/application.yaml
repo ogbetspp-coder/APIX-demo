@@ -1,0 +1,81 @@
+# ---------------------------------------------------------------------------
+# HAPI FHIR JPA server — APIX reference-implementation configuration (R5).
+#
+# Mounted into the container at /configs/application.yaml and selected via
+# SPRING_CONFIG_LOCATION (see docker-compose.yml). Everything the APIX demo
+# needs is turned on here:
+#   - FHIR version R5
+#   - WebSocket subscriptions  (real-time push to the browser UI)
+#   - REST-hook subscriptions  (production-style webhook delivery)
+#   - CORS open to any origin  (so the static UI on any host can call it)
+#   - PQI IG auto-loaded from the public registry
+#
+# The APIX IG is NOT on the registry (it is a CI build), so it is loaded
+# separately and OPTIONALLY from a mounted package.tgz — see the commented
+# block at the bottom and deploy/hapi-r5/README.md. The server starts cleanly
+# WITHOUT the APIX IG; v1 does not depend on APIX profile enforcement.
+# ---------------------------------------------------------------------------
+spring:
+  datasource:
+    url: 'jdbc:h2:file:/data/hapi/h2'
+    username: sa
+    password: null
+    driverClassName: org.h2.Driver
+  jpa:
+    properties:
+      hibernate.dialect: ca.uhn.fhir.jpa.model.dialect.HapiFhirH2Dialect
+      hibernate.search.enabled: false
+
+hapi:
+  fhir:
+    # ---- core ------------------------------------------------------------
+    fhir_version: R5
+    server_address: http://localhost:8080/fhir
+    default_encoding: JSON
+
+    # ---- real-time delivery channels ------------------------------------
+    subscription:
+      # WebSocket push: the browser binds to a Subscription and receives a
+      # `ping {id}` on each matching event. This is what the APIX UI's
+      # "Local HAPI" backend uses for real-time. (Public hapi.fhir.org does
+      # NOT expose this — that is why real-time targets THIS server.)
+      websocket_enabled: true
+      # REST-hook webhook delivery (production-style; also handy for testing).
+      resthook_enabled: true
+
+    # ---- CORS ------------------------------------------------------------
+    # Open for the demo so the static UI (file://, localhost, GitHub Pages,
+    # Netlify, …) can call the server. On AWS, narrow allowed_origin to the
+    # exact UI origin (see README "AWS note").
+    cors:
+      allow_Credentials: false
+      allowed_origin:
+        - '*'
+
+    # ---- Implementation Guides ------------------------------------------
+    # PQI (Pharmaceutical Quality, uv-dx-pq) — published to the FHIR package
+    # registry, so HAPI fetches it by name/version automatically. This lets
+    # the server understand/validate the PQI PlanDefinition + ObservationDefinitions.
+    implementationguides:
+      pharm_quality:
+        name: hl7.fhir.uv.pharm-quality
+        # Pin to a known package version if you need reproducibility; "current"
+        # tracks the latest published build. Update as the IG advances.
+        version: current
+        reloadExisting: false
+        installMode: STORE_AND_INSTALL
+
+      # ---- APIX (OPTIONAL) ----------------------------------------------
+      # hl7.fhir.uv.apix is a CONTINUOUS-BUILD IG, NOT on the package registry,
+      # so HAPI cannot fetch it by name. To enforce APIX profiles, drop the
+      # build package.tgz next to this file and uncomment the block below; the
+      # docker-compose mount already exposes ./apix-package.tgz at
+      # /configs/apix-package.tgz. Leaving it commented keeps startup clean and
+      # does NOT block v1 (APIX profile enforcement is opt-in).
+      #
+      # apix:
+      #   packageUrl: file:///configs/apix-package.tgz
+      #   name: hl7.fhir.uv.apix
+      #   version: current
+      #   reloadExisting: false
+      #   installMode: STORE_AND_INSTALL

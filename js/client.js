@@ -44,9 +44,12 @@ APIX.FhirClient = function () {
   };
 
   // Real HAPI adapter. Wired but optional — returns a Promise. The scripted
-  // demo runs on 'mock', so this path is exercised only when backend==='hapi'.
+  // demo runs on 'mock', so this path is exercised only for a real backend
+  // ('hapi' = public HAPI, 'local' = self-hosted Docker HAPI). The base URL is
+  // resolved per-backend via APIX.config.activeBase().
   proto._hapi = function (request) {
-    var url = APIX.config.hapiBase + request.url;
+    var base = (APIX.config.activeBase ? APIX.config.activeBase() : APIX.config.hapiBase);
+    var url = base + request.url;
     var init = { method: request.method, headers: request.headers };
     if (request.body != null) init.body = JSON.stringify(request.body);
     return fetch(url, init).then(function (resp) {
@@ -60,8 +63,11 @@ APIX.FhirClient = function () {
     });
   };
 
+  // Any real-server backend ('hapi' public or 'local' self-hosted) uses fetch();
+  // 'mock' uses the in-process server. Mock stays the stage-safe default.
   proto._adapter = function () {
-    return (APIX.config && APIX.config.backend === 'hapi') ? this._hapi : this._mock;
+    var b = APIX.config && APIX.config.backend;
+    return (b === 'hapi' || b === 'local') ? this._hapi : this._mock;
   };
 
   /* ---- the dispatch core ----------------------------------------------- */

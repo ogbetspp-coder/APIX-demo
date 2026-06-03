@@ -1,0 +1,52 @@
+# ---------------------------------------------------------------------------
+# APIX reference implementation — self-hosted HAPI FHIR R5 server.
+#
+#   docker compose up -d        # start
+#   ...wait for healthy...
+#   ./seed.sh                    # load APIX/PQI seed resources
+#   open the UI → Backend: "Local HAPI" (http://localhost:8080/fhir)
+#
+# This is the SELF-HOSTED server that exposes WebSocket subscriptions (the
+# public hapi.fhir.org/baseR5 does not). The browser UI binds a Subscription
+# over /websocket here for real-time push; see ../README.md and ../../js/store.js.
+#
+# AWS-portable: the same compose runs on an ECS task / EC2 host unchanged.
+# In that case set CORS (application.yaml -> hapi.fhir.cors.allowed_origin) to
+# the exact UI origin instead of '*'.
+# ---------------------------------------------------------------------------
+services:
+  hapi:
+    # hapiproject/hapi:latest tracks the current HAPI release, which is R5-capable
+    # (FHIR version is selected by application.yaml -> hapi.fhir.fhir_version: R5).
+    # For reproducible deploys, pin a specific recent tag, e.g.:
+    #     image: hapiproject/hapi:v8.4.0
+    # (Any HAPI >= v7.x supports R5 + websocket/resthook subscriptions. Confirm
+    #  the tag you pin still advertises websocket in /fhir/metadata.)
+    image: hapiproject/hapi:latest
+    container_name: apix-hapi-r5
+    ports:
+      - "8080:8080"
+    environment:
+      # Point Spring Boot at the mounted config. The directory form (trailing /)
+      # makes Spring load application.yaml from /configs.
+      SPRING_CONFIG_LOCATION: file:///configs/application.yaml
+    volumes:
+      - ./application.yaml:/configs/application.yaml:ro
+      # OPTIONAL APIX IG package — uncomment the apix block in application.yaml
+      # AND drop the build package.tgz here as ./apix-package.tgz to enforce
+      # APIX profiles. Harmless if the file is absent and the block stays
+      # commented (this mount is then simply unused).
+      # - ./apix-package.tgz:/configs/apix-package.tgz:ro
+      # Persist the H2 database so seeded resources survive restarts.
+      - hapi-data:/data/hapi
+    healthcheck:
+      # The server is "healthy" once the R5 CapabilityStatement is served.
+      test: ["CMD", "curl", "-f", "http://localhost:8080/fhir/metadata"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 90s
+    restart: unless-stopped
+
+volumes:
+  hapi-data:

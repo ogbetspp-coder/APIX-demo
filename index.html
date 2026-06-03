@@ -25,8 +25,15 @@
         <span class="backend-label">Backend</span>
         <button class="backend-opt on" id="backend-mock">Mock</button>
         <button class="backend-opt" id="backend-live">Live · HAPI R5</button>
+        <button class="backend-opt" id="backend-local">Local HAPI</button>
       </div>
       <span class="live-indicator" id="live-indicator" hidden>LIVE · hapi.fhir.org/baseR5 <small>shared/auto-wiped</small></span>
+      <span class="local-indicator" id="local-indicator" hidden>
+        LOCAL ·
+        <input class="local-base" id="local-base" type="text" spellcheck="false"
+               aria-label="Local HAPI base URL" value="http://localhost:8080/fhir">
+        <small>self-hosted · WebSocket push</small>
+      </span>
       <button class="tool-btn" id="why-btn" title="Why this matters">Why this matters</button>
       <button class="tool-btn" id="about-btn" title="Real vs Simulated">Real vs Simulated</button>
       <a class="tool-btn" id="conformance-link" href="VALIDATION.md" target="_blank" rel="noopener" title="Conformance: official HL7 validator">Conformance ↗</a>

@@ -41,7 +41,122 @@ APIX.store = {
   submissionInputs: [],
   _deliveryWired: false,
 
-  _isLive: function () { return !!(APIX.config && APIX.config.backend === 'hapi'); },
+  // "Live" = any real-server backend (public HAPI or self-hosted local HAPI):
+  // real fetch() round-trips, referential-integrity flattening, $validate, etc.
+  _isLive: function () { return !!(APIX.config && (APIX.config.backend === 'hapi' || APIX.config.backend === 'local')); },
+
+  // WebSocket real-time only targets a self-hosted HAPI ('local'): the public
+  // server does not expose /websocket. State for the live WS subscription:
+  _isLocal: function () { return !!(APIX.config && APIX.config.backend === 'local'); },
+  _ws: null,              // the open WebSocket (when push is active)
+  _wsBound: false,        // true once the server confirmed `bound {id}`
+  _wsSubId: null,         // server-assigned Subscription.id we bound to
+  _wsActive: function () { return !!(this._ws && this._wsBound); },
+
+  /* Derive the WebSocket endpoint from the active REST base:
+   *   http://host:8080/fhir  → ws://host:8080/fhir/websocket
+   *   https://host/fhir      → wss://host/fhir/websocket
+   * (HAPI serves the subscription WebSocket at {base}/websocket.) */
+  _wsUrl: function () {
+    var base = (APIX.config.activeBase ? APIX.config.activeBase() : APIX.config.localBase);
+    var ws = base.replace(/^http/, 'ws').replace(/\/+$/, '');
+    return ws + '/websocket';
+  },
+
+  /* Tear down any open WebSocket and reset its state. Safe to call repeatedly
+   * (reset() and backend switches call it). */
+  _closeWebSocket: function () {
+    if (this._ws) {
+      try { this._ws.onopen = this._ws.onmessage = this._ws.onerror = this._ws.onclose = null; } catch (e) {}
+      try { this._ws.close(); } catch (e) {}
+    }
+    this._ws = null;
+    this._wsBound = false;
+    this._wsSubId = null;
+  },
+
+  /* Open the HAPI subscription WebSocket and perform the documented handshake:
+   *   client → "bind {Subscription.id}"
+   *   server → "bound {Subscription.id}"
+   *   server → "ping  {Subscription.id}"   (on each matching event)
+   * On a ping we GET the Task and drive the SAME 'notification' flow the UI
+   * already consumes. Resolves true once `bound` is seen; resolves false if the
+   * socket errors/closes or does not bind within APIX.config.wsBindMs — callers
+   * then fall back to poll/read-back. Requires a global WebSocket (browser /
+   * Node 22); when absent, resolves false immediately. */
+  _openWebSocket: function (subId) {
+    var self = this;
+    this._closeWebSocket();
+    var WS = (typeof WebSocket !== 'undefined') ? WebSocket : (typeof window !== 'undefined' ? window.WebSocket : null);
+    if (!WS || !subId) return Promise.resolve(false);
+
+    var url = this._wsUrl();
+    return new Promise(function (resolve) {
+      var settled = false;
+      var ws;
+      try { ws = new WS(url); } catch (e) { resolve(false); return; }
+      self._ws = ws;
+      self._wsSubId = subId;
+
+      var bindTimer = setTimeout(function () {
+        if (!settled) { settled = true; self._closeWebSocket(); resolve(false); }
+      }, (APIX.config && APIX.config.wsBindMs) || 4000);
+
+      ws.onopen = function () {
+        // HAPI handshake: ask the server to bind this socket to our Subscription.
+        try { ws.send('bind ' + subId); } catch (e) {}
+        if (APIX.client && APIX.client.record) {
+          APIX.client.record('WebSocket bind → ' + url,
+            { method: 'WS', url: url, headers: {}, body: 'bind ' + subId },
+            { status: 101, statusText: 'Switching Protocols', headers: {}, body: null });
+        }
+      };
+
+      ws.onmessage = function (ev) {
+        var msg = (typeof ev.data === 'string') ? ev.data.trim() : '';
+        if (/^bound\b/i.test(msg)) {
+          self._wsBound = true;
+          if (!settled) { settled = true; clearTimeout(bindTimer); resolve(true); }
+          return;
+        }
+        if (/^ping\b/i.test(msg)) {
+          // A matching event fired server-side: pull the fresh Task and drive
+          // the existing notification flow (real push — no polling).
+          self._onWsPing(url, msg);
+        }
+      };
+
+      ws.onerror = function () {
+        if (!settled) { settled = true; clearTimeout(bindTimer); self._closeWebSocket(); resolve(false); }
+      };
+      ws.onclose = function () {
+        self._wsBound = false;
+        if (!settled) { settled = true; clearTimeout(bindTimer); resolve(false); }
+      };
+    });
+  },
+
+  /* Handle an inbound `ping {id}`: re-GET the Task off the server (real round-
+   * trip), then emit the SAME 'notification' detail the UI already consumes. */
+  _onWsPing: function (url, msg) {
+    var self = this;
+    if (APIX.client && APIX.client.record) {
+      APIX.client.record('WebSocket ping ← ' + url,
+        { method: 'WS', url: url, headers: {}, body: null },
+        { status: 200, statusText: 'event', headers: {}, body: msg });
+    }
+    if (!this.task || !this.task.id) return;
+    this.getAsync('Task/' + this.task.id).then(function (fresh) {
+      if (fresh && fresh.resourceType === 'Task') { self.task = fresh; self.put(fresh); }
+      var bizCode = (self.task.businessStatus && self.task.businessStatus.coding && self.task.businessStatus.coding[0])
+        ? self.task.businessStatus.coding[0].code : 'submitted';
+      // buildNotificationBundle() bumps eventCount itself; use its post-bump value as seq.
+      var bundle = self.buildNotificationBundle(self.task.status, bizCode);
+      self.bus.dispatchEvent(new CustomEvent('notification', {
+        detail: { bundle: bundle, businessStatus: bizCode, taskStatus: self.task.status, seq: self.eventCount, viaWebSocket: true }
+      }));
+    });
+  },
 
   /* Convert a Task's references to display-only so a live POST to a server that
    * enforces referential integrity (HAPI) succeeds without pre-creating every
@@ -55,6 +170,7 @@ APIX.store = {
   },
 
   reset: function () {
+    this._closeWebSocket();
     this.resources = {};
     this.subscriptions = [];
     this.eventCount = 0;
@@ -240,7 +356,7 @@ APIX.store = {
     // Capture the server-assigned Task id and build its public URL when live, so
     // a skeptic can open the very Task we just created on a server we don't own.
     if (this._isLive() && stored && stored.id) {
-      this.taskUrl = APIX.config.hapiBase + '/Task/' + stored.id;
+      this.taskUrl = (APIX.config.activeBase ? APIX.config.activeBase() : APIX.config.hapiBase) + '/Task/' + stored.id;
     }
 
     // Live: run a REAL $validate so HAPI's OperationOutcome shows in the inspector.
@@ -290,14 +406,35 @@ APIX.store = {
       APIX.server.registerTopic(APIX.seed.topicCreate);
     }
     var sub = APIX.seed.subscription;
-    // POST a REAL Subscription so it exists/visible on the server (live mode);
-    // we do NOT rely on server push — the UI reads the Task back after changes
-    // (production = a rest-hook webhook delivery).
+    // Self-hosted HAPI ('local') exposes a real WebSocket channel: POST a
+    // Subscription with channelType=websocket so the server will push us a
+    // `ping` on each matching Task change. Public HAPI / mock keep the seed's
+    // rest-hook channel (no usable push there → poll/read-back).
+    if (this._isLocal()) sub = this._websocketSubscription(APIX.seed.subscription);
+
+    // POST a REAL Subscription so it exists/visible on the server (live mode).
     var stored = await APIX.client.createSubscription(sub);
     if (stored && stored.resourceType === 'Subscription') sub = stored;
     if (!this._isLive() && APIX.server) APIX.server.registerSubscription(APIX.seed.subscription);
     this.subscriptions.push(sub);
     this.put(sub);
+
+    // Local HAPI: open the WebSocket and bind to the just-created Subscription.
+    // On success, updates arrive as real push; on failure we silently fall back
+    // to poll/read-back in updateTask() (this._wsActive() stays false).
+    if (this._isLocal() && stored && stored.id) {
+      await this._openWebSocket(stored.id);
+    }
+  },
+
+  /* Build a websocket-channel variant of the seed Subscription (deep-cloned so
+   * the seed object is untouched). HAPI delivers a `ping {id}` over the socket
+   * for matching events; .endpoint is dropped (the channel is the open socket). */
+  _websocketSubscription: function (seed) {
+    var sub = JSON.parse(JSON.stringify(seed));
+    sub.channelType = { system: APIX.SYS.channelType, code: 'websocket' };
+    delete sub.endpoint;
+    return sub;
   },
 
   /* ---- Regulator advances the Task; fires notifications ---------------- */
@@ -339,12 +476,19 @@ APIX.store = {
     this.put(this.task);
     this.bus.dispatchEvent(new CustomEvent('task', { detail: { task: this.task, firstTime: false } }));
 
-    // Live real-time = read-back. The mock server pushes a subscription-
-    // notification in-process; the live server does NOT push to us here (a
-    // production rest-hook webhook would). So in live mode we re-GET the Task
-    // from HAPI — a real round-trip — and drive the SAME 'notification' flow
-    // from the data that genuinely came back off the public server.
+    // Live real-time. Two paths:
+    //  (a) Local HAPI with an ACTIVE WebSocket bind → the server pushes a
+    //      `ping` (handled in _onWsPing, which re-GETs the Task and emits
+    //      'notification'). We just wait briefly for that push to land; if it
+    //      doesn't (e.g. topic timing), we fall through to the read-back below.
+    //  (b) Public HAPI, or local with no usable WebSocket → re-GET the Task
+    //      (a real round-trip) and drive the SAME 'notification' flow from the
+    //      data that genuinely came back off the server (poll/read-back).
     if (this._isLive()) {
+      if (this._wsActive()) {
+        var pushed = await this._awaitPush();
+        if (pushed) return;   // the WebSocket ping already drove 'notification'
+      }
       var fresh = await this.getAsync('Task/' + this.task.id);
       if (fresh && fresh.resourceType === 'Task') { this.task = fresh; this.put(fresh); }
       var bizCode = (this.task.businessStatus && this.task.businessStatus.coding && this.task.businessStatus.coding[0])
@@ -354,6 +498,24 @@ APIX.store = {
         detail: { bundle: bundle, businessStatus: bizCode, taskStatus: this.task.status, seq: this.eventCount }
       }));
     }
+  },
+
+  /* Wait up to APIX.config.pollMs for a WebSocket 'notification' to fire after a
+   * Task PUT. Resolves true if one arrived (so updateTask skips its read-back),
+   * false on timeout (→ poll/read-back fallback). */
+  _awaitPush: function () {
+    var self = this;
+    var before = this.eventCount;
+    var waitMs = (APIX.config && APIX.config.pollMs) || 1500;
+    return new Promise(function (resolve) {
+      var done = false;
+      function onNotif() { if (!done) { done = true; cleanup(); resolve(true); } }
+      function cleanup() { self.bus.removeEventListener('notification', onNotif); clearTimeout(timer); }
+      var timer = setTimeout(function () {
+        if (!done) { done = true; cleanup(); resolve(self.eventCount > before); }
+      }, waitMs);
+      self.bus.addEventListener('notification', onNotif);
+    });
   },
 
   /* Build the R5 subscription-notification Bundle (kept for any callers that

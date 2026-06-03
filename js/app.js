@@ -566,22 +566,33 @@
     refreshControls();
   }
 
-  /* ---- backend toggle (Mock ⇄ Live) ------------------------------------- */
-  function isLive() { return APIX.config && APIX.config.backend === 'hapi'; }
+  /* ---- backend toggle (Mock ⇄ Live · public ⇄ Local HAPI) --------------- */
+  function isLive()  { return APIX.config && APIX.config.backend === 'hapi'; }
+  function isLocal() { return APIX.config && APIX.config.backend === 'local'; }
   function reflectBackend() {
-    var live = isLive();
-    el('backend-toggle').setAttribute('aria-pressed', live ? 'true' : 'false');
+    var live = isLive(), local = isLocal();
+    el('backend-toggle').setAttribute('aria-pressed', (live || local) ? 'true' : 'false');
     el('backend-toggle').classList.toggle('live', live);
-    el('backend-mock').classList.toggle('on', !live);
+    el('backend-toggle').classList.toggle('local', local);
+    el('backend-mock').classList.toggle('on', !live && !local);
     el('backend-live').classList.toggle('on', live);
+    el('backend-local').classList.toggle('on', local);
     el('live-indicator').hidden = !live;
+    el('local-indicator').hidden = !local;
   }
   function setBackend(backend) {
     if (!APIX.config) return;
     if (APIX.config.backend === backend) return;
     APIX.config.backend = backend;
+    // For Local HAPI, adopt the (editable) base-URL field as the live target.
+    if (backend === 'local') syncLocalBase();
     reflectBackend();
     resetAll();   // changing backend resets the run (fresh ids / server state)
+  }
+  // Keep APIX.config.localBase in sync with the small base-URL field.
+  function syncLocalBase() {
+    var f = el('local-base');
+    if (f && f.value && f.value.trim()) APIX.config.localBase = f.value.trim();
   }
 
   var ABOUT_HTML =
@@ -591,9 +602,10 @@
     '<tr><td>FHIR R5 resources (Task, DocumentReference, Binary, Subscription, PQI Bundle)</td><td class="pass">Real &amp; conformant</td></tr>' +
     '<tr><td>Conformance to the APIX + PQI IGs</td><td class="pass">Official HL7 validator (88 → 1 documented IG bug)</td></tr>' +
     '<tr><td><strong>Live</strong> mode: POST / GET / $validate over the wire</td><td class="pass">Real, against public hapi.fhir.org/baseR5</td></tr>' +
-    '<tr><td>Server-assigned ids, ETags, OperationOutcome</td><td class="pass">Real (from the public server)</td></tr>' +
+    '<tr><td><strong>Local HAPI</strong> mode: self-hosted R5 server (deploy/hapi-r5)</td><td class="pass">Real REST + real R5 WebSocket subscription push</td></tr>' +
+    '<tr><td>Server-assigned ids, ETags, OperationOutcome</td><td class="pass">Real (from the server)</td></tr>' +
     '<tr><td>OAuth2 / SMART Backend Services token</td><td class="sim">Simulated (labeled; orthogonal to the exchange)</td></tr>' +
-    '<tr><td>Real-time push delivery</td><td class="sim">Subscription is real; here the UI reads the Task back (production = rest-hook webhook)</td></tr>' +
+    '<tr><td>Real-time push delivery</td><td class="sim">Public HAPI: UI reads the Task back (no websocket there). Local HAPI: real WebSocket push, poll/read-back fallback.</td></tr>' +
     '</tbody></table>' +
     '<p class="muted">Mock mode is the stage default: fully offline, deterministic, instant. Live mode talks to a shared public server whose data is periodically auto-wiped.</p>';
 
@@ -623,6 +635,14 @@
   el('modal').addEventListener('click', function (ev) { if (ev.target === el('modal')) el('modal').hidden = true; });
   el('backend-mock').addEventListener('click', function () { setBackend('mock'); });
   el('backend-live').addEventListener('click', function () { setBackend('hapi'); });
+  el('backend-local').addEventListener('click', function () { setBackend('local'); });
+  // Editing the base URL while on Local HAPI re-targets the next run.
+  el('local-base').addEventListener('change', function () {
+    syncLocalBase();
+    if (isLocal()) resetAll();
+  });
+  // Don't let clicks inside the URL field toggle the backend group.
+  el('local-base').addEventListener('click', function (ev) { ev.stopPropagation(); });
   el('about-btn').addEventListener('click', function () { openModal(ABOUT_HTML); });
 
   reflectBackend();
