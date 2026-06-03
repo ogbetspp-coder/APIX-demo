@@ -7,8 +7,14 @@
  *   - STATUS SPINE  : Draft → Submitted → Received → Validated → Assessing → Decision
  *   - INDUSTRY pane : ① Author (harmonize + consolidated spec) ② Submit ③ Track
  *   - HA pane       : ① Received ② Review (PDF / validate) ③ Decide
- *   - FOOTER        : narration + one primary "Next →"; parks for the decision
+ *   - FOOTER        : one primary action button (the verb is the only guidance)
+ *                     + tiny progress + Reset; parks for the decision
  *   - INSPECT       : focus resource/request + running 'io' call list
+ *
+ * Show, don't tell: no narration paragraph, no per-step captions. The flow reads
+ * from the structural labels + the single action button alone. Four deliberate
+ * user actions (Author → Submit → Validate → Decide); the spine still advances
+ * through every node, some automatically.
  */
 (function () {
   var store = APIX.store;
@@ -20,7 +26,6 @@
   var inFlight = false;      // a step handler is awaiting (live latency guard)
   var decisionPending = false; // ▶ engine has handed off to the HA decision buttons
   var infoRoundDone = false; // a Request-information Q&A loop has already completed
-  var terminalNarration = null;
 
   var ioEntries = [];        // captured { request, response } interactions
   var auditEntries = [];     // FHIR Provenance audit log (21 CFR Part 11 / ALCOA)
@@ -48,9 +53,8 @@
     var step = S[i];
     if (!step) return reached['rejected'] ? 'decision' : 'decision';
     switch (step.effect.type) {
-      case 'pull': case 'normalize': case 'render':
-      case 'connect': case 'submit': case 'subscribe': return 'draft';
-      case 'decision': return 'decision';
+      case 'author': case 'submit': return 'draft';
+      case 'decide': return 'decision';
       case 'updateTask': return step.effect.businessStatus;
       default: return 'draft';
     }
@@ -60,7 +64,7 @@
     var cur = spineCurrent();
     var html = SPINE.map(function (n) {
       var done = (n.code === 'draft')
-        ? (i > 2 || !!reached['submitted'])               // Draft is "done" once we've left Act 1
+        ? (i > 1 || !!reached['submitted'])               // Draft is "done" once we've submitted
         : (n.code === 'decision')
           ? (!!reached['approved'] || !!reached['rejected'])
           : !!reached[n.code];
@@ -90,28 +94,24 @@
     var step = S[i];
     if (step) {
       setActivePane(actorOf(step));
-      el('narration').textContent = step.narration;
-      el('stepbtn').innerHTML = esc(step.button) + ' &rarr;';
+      el('stepbtn').textContent = step.button;
       el('stepbtn').disabled = false;
       el('progress').textContent = 'Step ' + (i + 1) + ' / ' + S.length;
     } else {
       setActivePane(null);
-      el('narration').innerHTML = terminalNarration ||
-        '<strong>Done — end to end in minutes.</strong> Every status change was timestamped, and APIX carried both the PDF and the structured FHIR over the same rails.';
-      el('stepbtn').innerHTML = 'Done';
+      el('stepbtn').textContent = 'Done';
       el('stepbtn').disabled = true;
       el('progress').textContent = 'Complete';
     }
   }
 
   /* While the decision is the regulator's, the ▶ engine is parked: the footer
-     button is disabled and the three HA Decide buttons drive the transition. */
+     button is disabled and the three HA Decide buttons drive the transition.
+     The only hand-off hint is the Decide section heading on the HA pane. */
   function lockStepForDecision() {
     setActivePane('regulator');
-    el('stepbtn').innerHTML = 'Pick a decision &rarr;';
+    el('stepbtn').textContent = 'Awaiting decision';
     el('stepbtn').disabled = true;
-    el('narration').innerHTML = '<strong>Over to the regulator.</strong> On the Health Authority pane, pick an outcome: ' +
-      '<strong>Approve</strong>, <strong>Request information</strong> (a clock-stop Q&amp;A loop), or <strong>Reject</strong>. Nothing auto-approves.';
   }
 
   /* Run the current step. Handlers may be async (live mode does real network
@@ -127,25 +127,21 @@
 
     try {
       switch (step.effect.type) {
-        case 'pull': handlePull(); break;
-        case 'normalize': handleNormalize(); break;
-        case 'render': handleConsolidate(); break;
-        case 'connect': await handleConnect(); break;
+        case 'author': handleAuthor(); break;
         case 'submit': await handleSubmit(); break;
-        case 'subscribe': await handleSubscribe(); break;
         case 'updateTask':
           await store.updateTask(step.effect);
           afterRegStep(step);
           break;
-        case 'decision':
+        case 'decide':
+          await handleAssess();        // under-assessment, automatically
           show('ha-decide');
           decisionPending = true;
           break;   // leave `i` unchanged; refreshControls() locks ▶
       }
       if (!decisionPending) i += 1;
     } catch (e) {
-      el('narration').innerHTML = '<strong>Step failed:</strong> ' + esc(e && e.message ? e.message : String(e)) +
-        (store._isLive() ? ' — the public HAPI server may be busy; retry, or switch back to Mock.' : '');
+      flashError('Step failed: ' + (e && e.message ? e.message : String(e)));
     } finally {
       inFlight = false;
       btn.classList.remove('busy');
@@ -154,13 +150,6 @@
   }
 
   /* ============================ INDUSTRY ① Author ======================== */
-  function handlePull() {
-    show('ind-author');
-    // Pull simply opens the authoring block; the harmonize table fills next step.
-    el('harmonize').innerHTML = '<p class="step-cap">Source data lives in three local systems with their own codes. ' +
-      'Next: harmonize each term to the PQI controlled vocabularies.</p>';
-  }
-
   function relText(rel) {
     if (rel === 'equivalent') return 'equivalent';
     if (rel === 'source-is-narrower-than-target') return 'narrower → broader';
@@ -168,9 +157,10 @@
     return esc(rel);
   }
 
-  /* Harmonize — a clean mapping table that fills one row at a time; each row
-     fires a real ConceptMap/$translate (visible in Inspect). */
-  function handleNormalize() {
+  /* Author — one action: reveal the harmonize mapping table (each row fires a
+     real ConceptMap/$translate, visible in Inspect) AND the consolidated ONE
+     structured specification (merges the old pull/harmonize/consolidate beats). */
+  function handleAuthor() {
     show('ind-author');
     var rows = APIX.terminology.rows();
     el('harmonize').innerHTML =
@@ -193,7 +183,9 @@
         }, 280 * n + 80);
       })(r, tr);
     });
-    el('harmonize-cap').hidden = false;
+    APIX.pqi.normalize();
+    show('ind-spec');
+    renderConsolidated();
   }
 
   /* Consolidated spec — compact table with the one changed row highlighted, plus
@@ -215,18 +207,10 @@
       body =
         '<p class="cons-change">Change in this variation: <strong>' + esc(APIX.pqi.CHANGE.label) + '</strong> — ' +
           '<span class="diff-old">' + esc(APIX.pqi.CHANGE.before) + '</span> → <span class="diff-new">' + esc(APIX.pqi.CHANGE.after) + '</span></p>' +
-        '<p class="cons-ec">A computable <strong>ICH Q12 Established-Condition change</strong> — old range → new range on a ' +
-          'named, coded test — structured per the <strong>PQ-CMC / PQI R5 model FDA is standardizing</strong>. ' +
-          'Velexa (film-coated tablet) is a Solid Oral Dosage Form, inside PQ-CMC\'s current scope.</p>' +
         '<table class="grid spec-table"><thead><tr><th>Test</th><th>Release</th><th>End of shelf life</th></tr></thead>' +
           '<tbody>' + rows + '</tbody></table>';
     }
     el('consolidated').innerHTML = body;
-  }
-  function handleConsolidate() {
-    APIX.pqi.normalize();
-    show('ind-spec');
-    renderConsolidated();
   }
 
   /* ============================ INDUSTRY ②/③ ============================= */
@@ -244,37 +228,34 @@
     }).join('');
   }
 
-  async function handleConnect() {
-    await store.connect();
-    show('ind-author');
-    // Connection is a quiet line in the Track feed once subscribed; for now just
-    // record it as activity context.
-    feed('Connected — Organization + Endpoint registered, Bearer token issued.');
-    show('ind-track');
-  }
-
+  /* Submit — one action: connect (OAuth + register, silent — visible only in
+     Inspect → API calls), create the single Binary + DocumentReference + Task,
+     and subscribe for real-time status. The ONE payload lands on the HA pane
+     automatically (auto-"received"). Merges the old connect/submit/subscribe. */
   async function handleSubmit() {
+    await store.connect();
     await store.submit();
     var t = store.task;
     show('ind-pkg');
     el('pkg').innerHTML =
-      '<div class="pkg-head">' + t.input.length + ' documents carried by APIX ' +
+      '<div class="pkg-head">' + t.input.length + ' document carried by APIX ' +
         '<button class="link-btn" data-inspect="task">view Task</button>' + verifyLinkHtml() + '</div>' +
       docsHtml(t.input);
     show('ind-track');
-    feed('Submitted Type IB variation — Task created and delivered to the Health Authority.');
+    feed('Submitted — Task created and delivered to the Health Authority.');
+
+    await store.subscribe();
+    if (!reached['submitted']) reached['submitted'] = new Date();
+
+    // The payload lands on the HA pane automatically: acknowledge receipt and
+    // advance the spine Submitted → Received without a separate user click.
+    await store.updateTask({ type: 'updateTask', status: 'received', businessStatus: 'received', addProcedureNo: true, addOutputs: ['ack'] });
+    revealRegulator();
   }
 
   function verifyLinkHtml() {
     if (!store.taskUrl) return '';
     return ' <a class="verify-link" href="' + esc(store.taskUrl) + '" target="_blank" rel="noopener">on public server ↗</a>';
-  }
-
-  async function handleSubscribe() {
-    await store.subscribe();
-    show('ind-track');
-    feed('Subscribed to Task status changes — updates now arrive in real time, no polling.');
-    if (!reached['submitted']) reached['submitted'] = new Date();
   }
 
   /* Track — a quiet one-line activity feed (newest at the bottom). */
@@ -313,12 +294,26 @@
     }
   }
 
-  /* After a regulator updateTask step: reveal/advance the HA workflow blocks. */
+  /* After a regulator updateTask step: reveal/advance the HA workflow blocks.
+     The Validate action (key 'validate') reveals the Review block with the
+     Good/Bad batch teeth. */
   function afterRegStep(step) {
     revealRegulator();
-    if (step.key === 'receive') { /* Received block visible */ }
     if (step.key === 'validate') { show('ha-review'); }
-    if (step.key === 'assess') { /* assessment underway; Decide unlocks next */ }
+  }
+
+  /* Decide — under-assessment first (automatically), then the decision branch. */
+  async function handleAssess() {
+    await store.updateTask({ type: 'updateTask', status: 'in-progress', businessStatus: 'under-assessment' });
+    revealRegulator();
+  }
+
+  /* Surface a transient error without a footer narration line: a brief tag on
+     the action button (the flow has no telling sentences). */
+  function flashError(msg) {
+    var btn = el('stepbtn');
+    btn.textContent = msg;
+    setTimeout(refreshControls, 2400);
   }
 
   /* Review — read the spec, validate the structured data with Good/Bad teeth. */
@@ -372,26 +367,31 @@
     try {
       if (kind === 'approve') {
         await store.updateTask({ type: 'updateTask', status: 'completed', businessStatus: 'approved', taskCode: 'approval', addOutputs: ['approval', 'assessment'] });
-        terminalNarration = '<strong>Approved — end to end in minutes.</strong> Every status change was timestamped (cycle-time summary below), and APIX carried both the PDF and the structured FHIR over the same rails.';
         finishDecision();
       } else if (kind === 'reject') {
         await store.updateTask({ type: 'updateTask', status: 'completed', businessStatus: 'rejected', taskCode: 'rejection', addOutputs: ['rejection'] });
-        terminalNarration = '<strong>Rejected — but still in minutes, fully tracked.</strong> The same APIX rails carry a negative decision; every phase is timestamped below.';
         finishDecision();
       } else if (kind === 'info') {
         if (infoRoundDone) { setDecisionBtns(true); return; }
         await store.updateTask({ type: 'updateTask', status: 'on-hold', businessStatus: 'clock-stop', taskCode: 'information-request' });
         await store.updateTask({ type: 'updateTask', status: 'in-progress', businessStatus: 'under-assessment', taskCode: 'response-to-questions' });
         infoRoundDone = true;
-        el('narration').innerHTML = '<strong>Question answered — clock restarted.</strong> Now pick a final decision: Approve or Reject.';
+        decideHint('Clock restarted — choose a final decision: Approve or Reject.');
         setDecisionBtns(true);
       }
     } catch (e) {
-      el('narration').innerHTML = '<strong>Decision failed:</strong> ' + esc(e && e.message ? e.message : String(e));
+      decideHint('Decision failed: ' + (e && e.message ? e.message : String(e)));
       setDecisionBtns(true);
     } finally {
       inFlight = false;
     }
+  }
+
+  /* A tiny inline hint on the HA Decide section (replaces the footer paragraph
+     hand-off). */
+  function decideHint(text) {
+    var h = el('decide-hint');
+    if (h) h.textContent = text;
   }
 
   /* ===================== END SUMMARY (terminal only) ===================== */
@@ -588,14 +588,14 @@
   /* ============================ RESET =================================== */
   function resetAll() {
     i = 0; reached = {}; lastNotif = null; ioEntries = []; auditEntries = [];
-    decisionPending = false; infoRoundDone = false; terminalNarration = null;
+    decisionPending = false; infoRoundDone = false;
     batchKey = 'good'; specMode = 'doc';
     store.reset();
     renderAudit();
     ['ind-author', 'ind-spec', 'ind-pkg', 'ind-track', 'ha-content', 'ha-review', 'ha-decide', 'summary'].forEach(hide);
     show('ha-empty');
     ['harmonize', 'consolidated', 'pkg', 'feed', 'reg-docs', 'reg-status', 'reg-outputs', 'review-result', 'io-list'].forEach(function (id) { el(id).innerHTML = ''; });
-    el('harmonize-cap').hidden = true;
+    decideHint('');
     setIoCount(); closeInspect();
     setBatch('good'); setDecisionBtns(true);
     refreshControls();

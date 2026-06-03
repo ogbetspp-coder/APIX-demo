@@ -78,16 +78,6 @@ APIX.seed = {
     }]
   },
 
-  /* ---- Mocked supporting documents (the rest of the variation package) -- */
-  /* Built into Binary + DocumentReference at submit time (see js/store.js).  */
-  supportingDocs: [
-    { id: 'doc-cover',     ctd: '1.0',              title: 'Cover Letter.pdf',                  size: 184000 },
-    { id: 'doc-varform',   ctd: 'application-form', title: 'Variation Application Form.pdf',    size: 262000 },
-    { id: 'doc-justif',    ctd: '3.2.P.5.6',        title: 'Justification of Specification.pdf', size: 540000 },
-    { id: 'doc-batch',     ctd: '3.2.P.8.3',        title: 'Batch / Stability Data.pdf',        size: 1230000 },
-    { id: 'doc-stability', ctd: '3.2.P.8.1',        title: 'Stability Summary (36 months).pdf', size: 2100000 }
-  ],
-
   /* ---- Real-time layer: SubscriptionTopic x2 + Subscription ------------- */
   topicCreate: {
     resourceType: 'SubscriptionTopic',

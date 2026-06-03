@@ -344,32 +344,17 @@ APIX.store = {
     this.put(await APIX.client.create(APIX.seed.endpoint, { label: 'Register Endpoint (notification webhook)' }));
   },
 
-  /* ---- Build the dual-format spec + supporting documents --------------- */
+  /* ---- Build the ONE payload: a single DocumentReference for the structured
+   * drug-product specification, whose Binary.data is the PQI FHIR Bundle. The
+   * Document⇄FHIR toggle in the UI renders this same artifact two ways (eCTD
+   * 3.2.P.5.1 document view vs. the Bundle) — it is one payload, not two. ---- */
   buildSubmissionDocs: function () {
-    var docs = [];
     var bundleJson = JSON.stringify(APIX.pqi.bundle || APIX.pqi.normalize());
-
-    // (a) Spec as structured PQI FHIR Bundle
-    docs.push({
+    return [{
       kind: 'fhir',
       binary: { resourceType: 'Binary', id: 'binary-spec-fhir', contentType: 'application/fhir+json', data: APIX.b64(bundleJson) },
       docref: this._docref('docref-spec-fhir', '3.2.P.5.1', 'application/fhir+json', 'Drug Product Specification (structured PQI Bundle)', 'Binary/binary-spec-fhir')
-    });
-    // (b) Same spec as a rendered eCTD PDF
-    docs.push({
-      kind: 'pdf',
-      binary: { resourceType: 'Binary', id: 'binary-spec-pdf', contentType: 'application/pdf', data: APIX.b64('%PDF-1.7 Velexa 3.2.P.5.1 specification (rendered, demo stub)') },
-      docref: this._docref('docref-spec-pdf', '3.2.P.5.1', 'application/pdf', 'Drug Product Specification (eCTD 3.2.P.5.1, PDF)', 'Binary/binary-spec-pdf')
-    });
-    // (c) The rest of the variation package (mocked)
-    APIX.seed.supportingDocs.forEach(function (d) {
-      docs.push({
-        kind: 'support',
-        binary: { resourceType: 'Binary', id: 'binary-' + d.id, contentType: 'application/pdf', data: APIX.b64('%PDF-1.7 ' + d.title + ' (demo stub)') },
-        docref: APIX.store._docref(d.id, d.ctd, 'application/pdf', d.title, 'Binary/binary-' + d.id, d.size)
-      });
-    });
-    return docs;
+    }];
   },
 
   _docref: function (id, ctd, contentType, title, url, size) {

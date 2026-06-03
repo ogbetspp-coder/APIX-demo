@@ -51,8 +51,6 @@
           <div class="stage-block" id="ind-author" hidden>
             <div class="block-label">① Author — harmonize local terms</div>
             <div class="harmonize" id="harmonize"></div>
-            <p class="step-cap" id="harmonize-cap" hidden>Local terms harmonized to PQI controlled
-              vocabularies + UCUM via FHIR ConceptMap / $translate.</p>
           </div>
 
           <div class="stage-block" id="ind-spec" hidden>
@@ -65,9 +63,9 @@
             <div class="cons-body" id="consolidated"></div>
           </div>
 
-          <!-- ② Submit (package list, after submit) -->
+          <!-- ② Submit (the one payload, after submit) -->
           <div class="stage-block" id="ind-pkg" hidden>
-            <div class="block-label">② Submitted — documents carried by APIX</div>
+            <div class="block-label">② Submitted — payload carried by APIX</div>
             <div id="pkg"></div>
           </div>
 
@@ -116,7 +114,8 @@
 
             <!-- ③ Decide -->
             <div class="stage-block" id="ha-decide" hidden>
-              <div class="block-label">③ Decide</div>
+              <div class="block-label">③ Decide — Approve, Request information, or Reject</div>
+              <div class="decide-hint" id="decide-hint"></div>
               <div class="decision-btns" id="decision-btns">
                 <button class="dec-btn dec-approve" data-decision="approve">Approve</button>
                 <button class="dec-btn dec-info" data-decision="info">Request information</button>
@@ -138,12 +137,9 @@
 
   <!-- ===================== FOOTER (the single driver) ===================== -->
   <footer class="controls">
-    <div class="narration" id="narration"></div>
-    <div class="ctl-buttons">
-      <span id="progress" class="progress"></span>
-      <button id="resetbtn" class="btn-ghost">Reset</button>
-      <button id="stepbtn" class="btn-primary">Next</button>
-    </div>
+    <button id="stepbtn" class="btn-primary">Author specification</button>
+    <span id="progress" class="progress"></span>
+    <button id="resetbtn" class="btn-ghost">Reset</button>
   </footer>
 
   <!-- =================== INSPECT slide-over (the ONE affordance) =========== -->

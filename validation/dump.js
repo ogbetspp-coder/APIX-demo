@@ -33,11 +33,18 @@ w('Subscription', APIX.seed.subscription);
   await APIX.store.connect();
   await APIX.store.submit();
   await APIX.store.subscribe();
+  // ONE payload: the submission Task carries exactly one input — the single
+  // structured drug-product-specification DocumentReference (→ PQI Bundle Binary).
+  if (APIX.store.task.input.length !== 1) {
+    throw new Error('Expected Task.input.length === 1, got ' + APIX.store.task.input.length);
+  }
   w('Task', APIX.store.task);
   w('DocumentReference', APIX.store.get('DocumentReference/docref-spec-fhir'));
   // A representative audit Provenance (base R5 — no APIX profile) so the
   // official validator confirms it is valid FHIR R5.
   w('Provenance', APIX.store.provenance[0]);
 
+  // 9 resources: Bundle-pqi, Organization, MedicinalProductDefinition, Endpoint,
+  // SubscriptionTopic, Subscription, Task, the single spec DocumentReference, Provenance.
   console.log('Exported ' + fs.readdirSync(OUT).length + ' resources to ' + OUT);
 })().catch(function (e) { console.error(e); process.exit(1); });
