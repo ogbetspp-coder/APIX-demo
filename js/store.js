@@ -26,7 +26,8 @@ APIX.OUTPUTS = {
   ack:        { id: 'output-ack',        ctd: 'acknowledgement-receipt', title: 'Acknowledgement of Receipt' },
   validation: { id: 'output-validation', ctd: 'validation-report',       title: 'Validation Report' },
   approval:   { id: 'docref-approval',   ctd: 'approval-letter',         title: 'Approval Letter' },
-  assessment: { id: 'docref-assessment', ctd: 'assessment-report',       title: 'Assessment Report' }
+  assessment: { id: 'docref-assessment', ctd: 'assessment-report',       title: 'Assessment Report' },
+  rejection:  { id: 'docref-rejection',  ctd: 'assessment-report',       title: 'Decision Letter (negative)' }
 };
 
 APIX.store = {
@@ -306,6 +307,13 @@ APIX.store = {
     this.task.businessStatus = { coding: [{ system: APIX.SYS.businessStatus, code: effect.businessStatus, display: APIX.display('businessStatus', effect.businessStatus) }] };
     var nowIso = new Date().toISOString();
     this.task.lastModified = nowIso;
+
+    // Decision-branch task codes (real apix-task-code members). The regulator's
+    // decision/info-request and the applicant's response re-stamp Task.code so
+    // the action is self-describing; still a valid apix-task-code coding.
+    if (effect.taskCode) {
+      this.task.code = { coding: [{ system: APIX.SYS.taskCode, code: effect.taskCode, display: APIX.display('taskCode', effect.taskCode) }] };
+    }
 
     if (effect.addProcedureNo) {
       this.task.identifier.push({ use: 'official', type: { coding: [{ system: APIX.SYS.idType, code: 'apixregulatorprocedureno', display: 'APIX Regulator Procedure Number' }] }, system: APIX.SYS.procedureSystem, value: 'PROC-2026-04210' });

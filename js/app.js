@@ -31,13 +31,16 @@
     'approved': 'Approved — positive decision, approval letter attached',
     'rejected': 'Rejected — negative decision',
     'validation-failed': 'Validation failed — submission cannot be accepted',
-    'clock-stop': 'Clock stopped — awaiting further information',
+    'clock-stop': 'Clock stopped — List of Questions issued, awaiting response',
     'decision-pending': 'Decision pending'
   };
   function bizPlain(code) { return BIZ_PLAIN[code] || APIX.display('businessStatus', code); }
 
   var ioEntries = [];        // captured { } request/response interactions
   var ioOpen = false;        // inspector drawer expanded?
+  var batchKey = 'good';     // regulator's selected tested batch (good | bad)
+  var decisionPending = false; // true while the ▶ engine has handed off to the regulator decision buttons
+  var infoRoundDone = false; // a Request-information Q&A loop has already completed
 
   function el(id) { return document.getElementById(id); }
   function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
@@ -67,6 +70,7 @@
 
   /* ---- controls / step engine ------------------------------------------ */
   function refreshControls() {
+    if (decisionPending) { lockStepForDecision(); renderReview(); return; }
     var step = S[i];
     if (step) {
       el('narration').textContent = step.narration;
@@ -74,13 +78,14 @@
       el('stepbtn').disabled = false;
       el('progress').textContent = 'Step ' + (i + 1) + ' / ' + S.length;
     } else {
-      el('narration').innerHTML = '✅ <strong>Approved — end to end in minutes.</strong> Every status change was timestamped (your cycle-time analytics), and APIX carried both the PDF and the structured FHIR over the same rails.';
+      el('narration').innerHTML = terminalNarration || '✅ <strong>Done — end to end in minutes.</strong> Every status change was timestamped (your cycle-time analytics), and APIX carried both the PDF and the structured FHIR over the same rails.';
       el('stepbtn').innerHTML = 'Done'; el('stepbtn').disabled = true;
       el('progress').textContent = 'Complete';
       setStepper(4);
     }
     renderReview();
   }
+  var terminalNarration = null;   // set by a terminal Approve/Reject
 
   var inFlight = false;      // a step handler is awaiting (live latency guard)
 
@@ -114,8 +119,15 @@
           await store.updateTask(step.effect);
           reviewDone[step.key] = true;
           break;
+        case 'decision':
+          // Hand off to the regulator's three-way decision buttons. The linear
+          // ▶ engine pauses here (decisionPending); it does NOT advance `i` until
+          // a terminal Approve/Reject is chosen on the regulator panel.
+          el('decision').hidden = false;
+          decisionPending = true;
+          break;   // leave `i` unchanged; refreshControls() locks ▶ while decisionPending
       }
-      i += 1;
+      if (!decisionPending) i += 1;
     } catch (e) {
       el('narration').innerHTML = '⚠️ <strong>Step failed:</strong> ' + esc(e && e.message ? e.message : String(e)) +
         (store._isLive ? ' — the public HAPI server may be busy; retry, or switch back to Mock.' : '');
@@ -124,6 +136,17 @@
       btn.classList.remove('busy');
     }
     refreshControls();
+  }
+
+  /* While the decision is in the regulator's hands, the ▶ engine is parked: the
+     button stays disabled with a hint, and the three decision buttons drive the
+     next transition. Approve/Reject are terminal; Request information runs one
+     Q&A loop then re-arms these same three buttons. */
+  function lockStepForDecision() {
+    el('stepbtn').innerHTML = 'Pick a decision →';
+    el('stepbtn').disabled = true;
+    el('narration').innerHTML = '⏸️ <strong>Over to the regulator.</strong> On the Health Authority panel, pick an outcome: ' +
+      '<strong>Approve</strong>, <strong>Request information</strong> (a clock-stop Q&amp;A loop), or <strong>Reject</strong>. Nothing auto-approves.';
   }
   function show(id) { el(id).hidden = false; }
 
@@ -163,7 +186,7 @@
         setTimeout(function () {
           node.classList.add('in');
           APIX.client.translate(row.source.system, row.source.code);
-        }, 250 * n + 120);
+        }, 450 * n + 120);   // slower stagger so motion reads on a low-FPS Teams stream
       })(r, div);
     });
   }
@@ -315,6 +338,104 @@
     el('conv-log').scrollTop = el('conv-log').scrollHeight;
   }
 
+  /* ---- regulator decision branch (approve / request-info / reject) -------
+     The ▶ engine parks at the `decision` step; these buttons drive the rest.
+     Approve and Reject are terminal (advance `i` past the last step → the
+     completion view + cycle-time summary + adoption panel render). Request
+     information runs ONE clock-stop Q&A loop, then re-arms the three buttons. */
+  function setDecisionBtns(enabled) {
+    [].forEach.call(el('decision-btns').children, function (b) { b.disabled = !enabled; });
+  }
+  function finishDecision() {
+    decisionPending = false;
+    el('decision').hidden = true;
+    i = S.length;                 // past the last step → completion view
+    el('adoption').hidden = false;
+    refreshControls();
+    // The terminal notification's tracker stamp lands via a 520ms setTimeout;
+    // render the cycle-time summary just after so reached[approved|rejected] is set.
+    setTimeout(renderCycleTime, 700);
+  }
+  async function onDecision(kind) {
+    if (!decisionPending || inFlight) return;
+    inFlight = true; setDecisionBtns(false);
+    try {
+      if (kind === 'approve') {
+        await store.updateTask({ type: 'updateTask', status: 'completed', businessStatus: 'approved', taskCode: 'approval', addOutputs: ['approval', 'assessment'] });
+        reviewDone['approve'] = true;
+        terminalNarration = '✅ <strong>Approved — end to end in minutes.</strong> Every status change was timestamped (your cycle-time analytics below), and APIX carried both the PDF and the structured FHIR over the same rails.';
+        finishDecision();
+      } else if (kind === 'reject') {
+        await store.updateTask({ type: 'updateTask', status: 'completed', businessStatus: 'rejected', taskCode: 'rejection', addOutputs: ['rejection'] });
+        reviewDone['approve'] = true;
+        convLine('in', '🏛️ Health Authority', '🏭 SynthPharma', '🏛️→🏭 Negative decision — variation rejected', 'Task');
+        terminalNarration = '⛔ <strong>Rejected — but still in minutes, fully tracked.</strong> The same APIX rails carry a negative decision; every phase is timestamped in the cycle-time summary below.';
+        finishDecision();
+      } else if (kind === 'info') {
+        if (infoRoundDone) { setDecisionBtns(true); return; }   // one loop only
+        // HA posts a List of Questions (clock-stop) ...
+        await store.updateTask({ type: 'updateTask', status: 'on-hold', businessStatus: 'clock-stop', taskCode: 'information-request' });
+        convLine('in', '🏛️ Health Authority', '🏭 SynthPharma', '❔ List of Questions: justify the tightened end-of-shelf-life Water Content limit (≤ 1.5% w/w)', 'Task');
+        // ... Industry responds (clock restart).
+        await store.updateTask({ type: 'updateTask', status: 'in-progress', businessStatus: 'under-assessment', taskCode: 'response-to-questions' });
+        convLine('out', '🏭 SynthPharma', '🏛️ Health Authority', '📎 Response to questions: 36-month stability data supports ≤ 1.5% — clock restarts', 'Task');
+        infoRoundDone = true;
+        el('narration').innerHTML = '🔁 <strong>Question answered — clock restarted.</strong> Now pick a final decision: Approve or Reject.';
+        setDecisionBtns(true);
+      }
+    } catch (e) {
+      el('narration').innerHTML = '⚠️ <strong>Decision failed:</strong> ' + esc(e && e.message ? e.message : String(e));
+      setDecisionBtns(true);
+    } finally {
+      inFlight = false;
+    }
+  }
+
+  /* ---- end-of-run cycle-time summary (this run's REAL timestamps) --------- */
+  var CT_PHASES = [
+    { from: 'submitted', to: 'received',   label: 'Submitted → Received' },
+    { from: 'received',  to: 'validation-successful', label: 'Received → Validated' },
+    { from: 'validation-successful', to: 'under-assessment', label: 'Validated → Assessing' },
+    { from: 'under-assessment', to: 'approved', label: 'Assessing → Approved', altTo: 'rejected' }
+  ];
+  function fmtElapsed(ms) {
+    if (ms < 1000) return ms + ' ms';
+    if (ms < 60000) return (ms / 1000).toFixed(1) + ' s';
+    return (ms / 60000).toFixed(1) + ' min';
+  }
+  function renderCycleTime() {
+    var first = reached['submitted'];
+    var rowsHtml = '', maxMs = 1, segs = [];
+    CT_PHASES.forEach(function (p) {
+      var a = reached[p.from], b = reached[p.to] || (p.altTo ? reached[p.altTo] : null);
+      var ms = (a && b) ? (b - a) : null;
+      if (ms != null && ms > maxMs) maxMs = ms;
+      segs.push({ label: p.label, ms: ms });
+    });
+    segs.forEach(function (s) {
+      var pct = s.ms != null ? Math.max(4, Math.round(100 * s.ms / maxMs)) : 0;
+      rowsHtml += '<div class="ct-row"><span class="ct-lbl">' + esc(s.label) + '</span>' +
+        '<span class="ct-bar"><span class="ct-fill" style="width:' + pct + '%"></span></span>' +
+        '<span class="ct-val">' + (s.ms != null ? esc(fmtElapsed(s.ms)) : '—') + '</span></div>';
+    });
+    var last = reached['approved'] || reached['rejected'];
+    var totalMs = (first && last) ? (last - first) : null;
+    el('cycle-time').hidden = false;
+    el('cycle-time').innerHTML =
+      '<div class="ct-head">⏱️ Cycle time — <strong>this run\'s real timestamps</strong> · every phase is now measured</div>' +
+      '<div class="ct-bars">' + rowsHtml + '</div>' +
+      '<div class="ct-total">Total (submit → decision): <strong>' + (totalMs != null ? esc(fmtElapsed(totalMs)) : '—') + '</strong></div>' +
+      '<div class="ct-baseline">vs. <em>typical manual variation ≈ weeks</em> <span class="ct-illus">illustrative baseline — not a measured value</span></div>' +
+      '<div class="ct-note">The point isn\'t the seconds on stage — it\'s that APIX makes cycle time <strong>measurable</strong>. That is the analytics value.</div>';
+  }
+
+  /* ---- "Why this matters" toggle (Today vs APIX value contrast) ----------- */
+  function toggleValueContrast() {
+    var vc = el('value-contrast');
+    vc.hidden = !vc.hidden;
+    el('why-btn').classList.toggle('on', !vc.hidden);
+  }
+
   /* ---- I/O inspector (real request/response inspector) ------------------ */
   function ioStatusClass(status) {
     if (status >= 200 && status < 300) return 'ok';
@@ -381,11 +502,19 @@
     if (kind === 'pdf') openModal('<h2 class="modal-title">📄 Rendered eCTD 3.2.P.5.1 (PDF view)</h2>' + APIX.pqi.renderSpecHtml());
     else if (kind === 'fhir') openJson('{ } PQI FHIR Bundle — Bundle-drug-product-specification-pq', APIX.pqi.bundle || APIX.pqi.normalize());
     else if (kind === 'validate') {
-      var rows = APIX.pqi.validate().map(function (v) {
-        return '<tr><td>' + esc(v.test) + '</td><td>' + esc(v.criterion) + '</td><td>' + esc(v.measured) +
-          '</td><td class="pass">✓ PASS</td></tr>';
+      var results = APIX.pqi.validate(batchKey);
+      var anyFail = results.some(function (v) { return !v.pass; });
+      var batchLabel = (APIX.pqi.batches[batchKey] || {}).label || batchKey;
+      var rows = results.map(function (v) {
+        return '<tr' + (v.pass ? '' : ' class="val-fail-row"') + '><td>' + esc(v.test) + '</td><td>' + esc(v.criterion) + '</td><td>' + esc(v.measured) +
+          '</td><td class="' + (v.pass ? 'pass' : 'fail') + '">' + (v.pass ? '✓ PASS' : '✗ FAIL') + '</td></tr>';
       }).join('');
-      openModal('<h2 class="modal-title">✓ Structured validation — batch vs. acceptance criteria</h2>' +
+      var banner = anyFail
+        ? '<div class="val-banner val-banner-fail">✗ OUT OF SPECIFICATION — acceptance criterion breached</div>' +
+          '<p class="val-punch">In the 300-page PDF this is buried; in the structured spec the acceptance criterion is <strong>machine-checked — caught at submit.</strong></p>'
+        : '<div class="val-banner val-banner-pass">✓ All acceptance criteria met</div>';
+      openModal('<h2 class="modal-title">✓ Structured validation — ' + esc(batchLabel) + ' vs. acceptance criteria</h2>' +
+        banner +
         '<p class="muted">Read directly from the PQI ObservationDefinitions — no transcription from a PDF.</p>' +
         '<table class="val-table"><thead><tr><th>Test</th><th>Criterion</th><th>Measured</th><th>Result</th></tr></thead><tbody>' + rows + '</tbody></table>');
     }
@@ -423,10 +552,13 @@
   function resetAll() {
     i = 0; reviewDone = {}; reached = {}; lastNotif = null; apixDrawn = false;
     ioEntries = []; notifLog = [];
+    decisionPending = false; infoRoundDone = false; terminalNarration = null; batchKey = 'good';
     store.reset();
-    ['b-sources', 'a-normalize', 'b-spec', 'a-render', 'b-formats', 'pkg', 'tracker', 'reg', 'review', 'reg-flex', 'loopnote', 'conversation'].forEach(function (id) { el(id).hidden = true; });
-    ['sources', 'harmonize', 'consolidated', 'pkg', 'reg-docs', 'reg-outputs', 'reg-status', 'review', 'apixsteps', 'lane', 'conv-log', 'io-list'].forEach(function (id) { el(id).innerHTML = ''; });
+    ['b-sources', 'a-normalize', 'b-spec', 'a-render', 'b-formats', 'pkg', 'tracker', 'reg', 'review', 'reg-flex', 'decision', 'loopnote', 'conversation', 'cycle-time', 'adoption'].forEach(function (id) { el(id).hidden = true; });
+    ['sources', 'harmonize', 'consolidated', 'pkg', 'reg-docs', 'reg-outputs', 'reg-status', 'review', 'apixsteps', 'lane', 'conv-log', 'io-list', 'cycle-time'].forEach(function (id) { el(id).innerHTML = ''; });
     setIoCount(); setDrawer(false);
+    setBatch('good'); setDecisionBtns(true);
+    el('value-contrast').hidden = false; el('why-btn').classList.add('on');
     el('inbox-empty').hidden = false;
     el('conn').className = 'conn'; el('conn').innerHTML = '<span class="dot"></span> Not connected';
     el('view-exchange').hidden = true; el('view-author').hidden = false;
@@ -465,14 +597,24 @@
     '</tbody></table>' +
     '<p class="muted">Mock mode is the stage default: fully offline, deterministic, instant. Live mode talks to a shared public server whose data is periodically auto-wiped.</p>';
 
+  /* ---- batch toggle (regulator: good vs bad tested batch) ---------------- */
+  function setBatch(key) {
+    batchKey = key;
+    el('batch-good').classList.toggle('on', key === 'good');
+    el('batch-bad').classList.toggle('on', key === 'bad');
+  }
+
   /* ---- wiring ----------------------------------------------------------- */
   document.addEventListener('click', function (ev) {
     var sum = ev.target.closest('.io-sum');
     if (sum) { var det = sum.parentNode.querySelector('.io-detail'); if (det) det.hidden = !det.hidden; return; }
+    var b = ev.target.closest('[data-batch]'); if (b) { setBatch(b.getAttribute('data-batch')); return; }
+    var dec = ev.target.closest('[data-decision]'); if (dec) { onDecision(dec.getAttribute('data-decision')); return; }
     var m = ev.target.closest('[data-mode]'); if (m) { renderConsolidated(m.getAttribute('data-mode')); return; }
     var d = ev.target.closest('[data-doc]'); if (d) { openDoc(d.getAttribute('data-doc')); return; }
     var p = ev.target.closest('[data-peek]'); if (p) { openPeek(p.getAttribute('data-peek')); return; }
   });
+  el('why-btn').addEventListener('click', toggleValueContrast);
   el('io-toggle').addEventListener('click', function () { setDrawer(!ioOpen); });
   el('io-close').addEventListener('click', function () { setDrawer(false); });
   el('stepbtn').addEventListener('click', runStep);
@@ -484,6 +626,7 @@
   el('about-btn').addEventListener('click', function () { openModal(ABOUT_HTML); });
 
   reflectBackend();
+  el('why-btn').classList.add('on');   // value-contrast visible by default (toggle to hide)
   setStepper(1);
   refreshControls();
 })();

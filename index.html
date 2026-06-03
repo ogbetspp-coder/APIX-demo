@@ -27,6 +27,7 @@
         <button class="backend-opt" id="backend-live">Live · HAPI R5</button>
       </div>
       <span class="live-indicator" id="live-indicator" hidden>● LIVE · hapi.fhir.org/baseR5 <small>shared/auto-wiped</small></span>
+      <button class="tool-btn" id="why-btn" title="Why this matters">Why this matters</button>
       <button class="tool-btn" id="about-btn" title="Real vs Simulated">Real vs Simulated</button>
       <a class="tool-btn" id="conformance-link" href="VALIDATION.md" target="_blank" rel="noopener" title="Conformance: official HL7 validator">Conformance ↗</a>
       <button class="io-toggle" id="io-toggle" aria-expanded="false">
@@ -69,6 +70,32 @@
 
     <!-- ================= ACT 2 & 3 — EXCHANGE (shared) ================== -->
     <section class="view" id="view-exchange" hidden>
+
+      <!-- Quantified value contrast — Today vs APIX + PQI -->
+      <div class="value-contrast" id="value-contrast">
+        <div class="vc-col vc-today">
+          <div class="vc-h">Today</div>
+          <ul>
+            <li><span class="vc-ic">⏳</span> <strong>Weeks</strong> of elapsed time</li>
+            <li><span class="vc-ic">✂️</span> Manual document assembly</li>
+            <li><span class="vc-ic">📤</span> Portal upload + email</li>
+            <li><span class="vc-ic">🔕</span> No live status</li>
+            <li><span class="vc-ic">⚠️</span> Errors found late</li>
+          </ul>
+        </div>
+        <div class="vc-vs">vs</div>
+        <div class="vc-col vc-apix">
+          <div class="vc-h">APIX + PQI</div>
+          <ul>
+            <li><span class="vc-ic">⚡</span> <strong>Minutes</strong>, end to end</li>
+            <li><span class="vc-ic">🧩</span> Structured + auto-validated</li>
+            <li><span class="vc-ic">🔗</span> One API</li>
+            <li><span class="vc-ic">📡</span> Real-time tracked</li>
+            <li><span class="vc-ic">✅</span> Errors caught at submit</li>
+          </ul>
+        </div>
+      </div>
+
       <div class="exchange">
 
         <!-- Applicant -->
@@ -97,8 +124,21 @@
             <div class="review" id="review" hidden></div>
             <div class="reg-flex" id="reg-flex" hidden>
               <div class="flex-q">How does the reviewer read the specification?</div>
+              <div class="batch-toggle" id="batch-toggle">
+                <span class="batch-lbl">Tested batch:</span>
+                <button class="batch-opt on" id="batch-good" data-batch="good">✓ Good batch</button>
+                <button class="batch-opt" id="batch-bad" data-batch="bad">✗ Bad batch</button>
+              </div>
               <button data-doc="pdf">📄 Open the PDF</button>
               <button data-doc="validate" class="btn-accent">✓ Check the structured data</button>
+            </div>
+            <div class="decision" id="decision" hidden>
+              <div class="flex-q">Regulator decision — pick an outcome:</div>
+              <div class="decision-btns" id="decision-btns">
+                <button class="dec-btn dec-approve" data-decision="approve">✓ Approve</button>
+                <button class="dec-btn dec-info" data-decision="info">❔ Request information</button>
+                <button class="dec-btn dec-reject" data-decision="reject">✕ Reject</button>
+              </div>
             </div>
             <div class="reg-outputs" id="reg-outputs"></div>
           </div>
@@ -109,6 +149,18 @@
       <div class="conversation" id="conversation" hidden>
         <div class="conv-head">Conversation · Industry ⇄ Health Authority</div>
         <div class="conv-log" id="conv-log"></div>
+      </div>
+
+      <div class="cycle-time" id="cycle-time" hidden></div>
+
+      <div class="adoption" id="adoption" hidden>
+        <div class="adopt-head">What it takes to adopt</div>
+        <ul class="adopt-list">
+          <li><strong>An off-the-shelf R5 FHIR server</strong> — HAPI, Smile CDR, Azure Health Data Services, AWS (note: AWS HealthLake is R4).</li>
+          <li><strong>Map your local terms once</strong> via ConceptMap — then $translate does the crosswalk for every submission.</li>
+          <li><strong>SMART Backend Services OAuth2</strong> — standard machine-to-machine authentication.</li>
+          <li><strong>The standards are published</strong> — HL7 <strong>APIX</strong> + <strong>PQI</strong>, both FHIR R5. No bespoke protocol to invent.</li>
+        </ul>
       </div>
     </section>
   </main>

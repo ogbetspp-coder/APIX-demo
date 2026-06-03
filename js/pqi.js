@@ -295,18 +295,89 @@ APIX.pqi = (function () {
       '</div>';
   }
 
-  /* Regulator-side: machine-check a tested batch against the structured criteria. */
-  function validate() {
-    return [
-      { test: 'Assay', criterion: '95–105% LC', measured: '99.2%', pass: true },
-      { test: 'Dissolution', criterion: 'Q ≥ 80% / 30 min', measured: '88%', pass: true },
-      { test: 'Water Content (release)', criterion: '≤ 1.0% w/w', measured: '0.6%', pass: true },
-      { test: 'Total Degradation Products', criterion: '≤ 1.4% w/w', measured: '0.6%', pass: true }
-    ];
+  /* ---- Tested batches the regulator machine-checks against the spec --------
+     Each batch carries measured values keyed by test code (+ a sub-key for the
+     impurity ranges that have an `appliesTo`). GOOD = all in range; BAD = one
+     deliberate breach (end-of-shelf-life Water Content 1.8% vs the tightened
+     ≤ 1.5%). Values are read straight off these objects and compared against the
+     structured ObservationDefinition criteria — no transcription from a PDF.    */
+  var batches = {
+    good: {
+      label: 'Batch VX-2026-007 (representative)',
+      values: {
+        DESC: 'conforms', IDT: 'conforms', ASSAY: 99.2, Dissolution: 88,
+        WaterContent: 1.3,                         // end-of-shelf-life, ≤ 1.5% ✓
+        'Microbiological Quality': 'conforms',
+        DGP: { 'Total degradation products': 1.9, 'Individual unspecified': 0.3 }
+      }
+    },
+    bad: {
+      label: 'Batch VX-2026-011 (out-of-spec)',
+      values: {
+        DESC: 'conforms', IDT: 'conforms', ASSAY: 99.0, Dissolution: 86,
+        WaterContent: 1.8,                         // end-of-shelf-life, > 1.5% ✗  (the breach)
+        'Microbiological Quality': 'conforms',
+        DGP: { 'Total degradation products': 2.0, 'Individual unspecified': 0.3 }
+      }
+    }
+  };
+
+  /* The subset of tests we surface in the regulator's structured check, with a
+     readable label and which timing (shelf-life is where the variation bites).  */
+  var CHECKS = [
+    { code: 'ASSAY',        timing: 'release',   label: 'Assay (release)' },
+    { code: 'Dissolution',  timing: 'release',   label: 'Dissolution (release)' },
+    { code: 'WaterContent', timing: 'shelfLife', label: 'Water Content (end of shelf life)' },
+    { code: 'DGP',          timing: 'shelfLife', label: 'Total Degradation Products (shelf life)' }
+  ];
+
+  function findTest(code) {
+    for (var i = 0; i < tests.length; i++) if (tests[i].code === code) return tests[i];
+    return null;
+  }
+
+  /* Pick the numeric high limit (and a readable criterion) for a check. For an
+     impurity test we use the 'Total degradation products' range. */
+  function limitFor(test, timing) {
+    var c = timing === 'release' ? test.release : test.shelfLife;
+    if (!c) return null;
+    if (c.text) return { kind: 'text', text: c.text };
+    if (c.ranges) {
+      var r = test.impurity
+        ? (function () { for (var i = 0; i < c.ranges.length; i++) if (c.ranges[i].appliesTo === 'Total degradation products') return c.ranges[i]; return c.ranges[0]; })()
+        : c.ranges[0];
+      return { kind: 'range', high: r.high, appliesTo: r.appliesTo || null };
+    }
+    return null;
+  }
+
+  /* Regulator-side: machine-check a tested batch against the structured criteria.
+     Returns rows [{ test, criterion, measured, pass }]; computed, not hard-coded. */
+  function validate(batchKey) {
+    var batch = batches[batchKey] || batches.good;
+    return CHECKS.map(function (chk) {
+      var test = findTest(chk.code);
+      var lim = limitFor(test, chk.timing);
+      var raw = batch.values[chk.code];
+      var measured, criterion, pass;
+
+      if (!lim || lim.kind === 'text') {
+        criterion = lim ? lim.text : '—';
+        measured = (raw == null ? 'conforms' : String(raw));
+        pass = true;                                 // text criteria: conforms
+      } else {
+        // numeric range → compare measured value to the high limit.
+        var val = test.impurity && raw && typeof raw === 'object' ? raw['Total degradation products'] : raw;
+        criterion = '≤ ' + lim.high.toFixed(1) + '% w/w';
+        measured = (typeof val === 'number') ? val.toFixed(1) + '%' : String(val);
+        pass = (typeof val === 'number') ? (val <= lim.high + 1e-9) : true;
+      }
+      return { test: chk.label, criterion: criterion, measured: measured, pass: pass };
+    });
   }
 
   return {
-    sources: sources, tests: tests, CHANGE: CHANGE, bundle: null,
+    sources: sources, tests: tests, CHANGE: CHANGE, bundle: null, batches: batches,
     normalize: normalize, specRows: specRows, criterionText: criterionText,
     renderSpecHtml: renderSpecHtml, validate: validate
   };

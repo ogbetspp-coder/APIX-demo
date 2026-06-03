@@ -68,9 +68,9 @@ APIX.scenario = [
   },
   {
     key: 'approve', act: 'apix', actor: 'regulator', phase: 'Track',
-    button: 'Regulator: approve the variation',
-    narration: 'Positive decision: Task.status → completed, businessStatus → approved, with the approval letter and assessment report attached. Every transition was timestamped — that is your cycle-time analytics.',
-    effect: { type: 'updateTask', status: 'completed', businessStatus: 'approved', addOutputs: ['approval', 'assessment'] }
+    button: 'Regulator: reach a decision',
+    narration: 'Decision time — and this is NOT only a happy path. The reviewer picks one of three real APIX outcomes on the regulator panel: Approve, Request information (a Q&A clock-stop loop), or Reject. The ▶ engine hands off to those buttons; nothing auto-approves.',
+    effect: { type: 'decision' }
   }
 ];
 
