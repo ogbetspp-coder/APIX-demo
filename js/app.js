@@ -306,9 +306,12 @@
     // is shown as a colored left-lane + a small source label inside the Local
     // cell, so the table reads as an ASSEMBLY from three colored source systems.
     el('harmonize').innerHTML =
+      '<div class="stage-cap">Each local code is mapped to a PQI standard term by a real FHIR ' +
+        '<code>ConceptMap</code> · <code>$translate</code> — structured in, structured out.</div>' +
       '<table class="grid map-table"><thead><tr>' +
-        '<th>Local term</th><th class="map-arrow-th"></th><th>PQI term</th>' +
-      '</tr></thead><tbody id="map-rows"></tbody></table>';
+        '<th>Source · local code</th><th class="map-arrow-th"></th><th>PQI standard term</th>' +
+      '</tr></thead><tbody id="map-rows"></tbody></table>' +
+      '<div class="conn-arrow">↓ assembled into one PQI Bundle</div>';
     var body = el('map-rows');
     rows.forEach(function (r, n) {
       var skey = srcOf(r.source.code);
@@ -332,7 +335,33 @@
     });
     APIX.pqi.normalize();
     show('ind-spec');
+    renderBundleTree();
     renderConsolidated();
+  }
+
+  /* The OUTPUT made unmistakable: the harmonized terms become coded
+     ObservationDefinitions, grouped by one PlanDefinition — the PQI Bundle.
+     A compact structure tree so there is zero doubt what was built. */
+  function renderBundleTree() {
+    var n = (APIX.pqi.tests || []).length;
+    var total = 2 * n + 5;   // n release ODs + n shelf ODs + 1 PlanDefinition + 4 context
+    el('bundle-tree').innerHTML =
+      '<div class="bt-cap">Every harmonized term becomes a coded <code>ObservationDefinition</code>; ' +
+        'grouped by one <code>PlanDefinition</code> — together, the PQI Bundle.</div>' +
+      '<ul class="bt">' +
+        '<li><span class="bt-tag">Bundle</span> collection · ' + total + ' resources' +
+          '<ul>' +
+            '<li><span class="bt-tag">PlanDefinition</span> Specification for Drug Product' +
+              '<ul>' +
+                '<li><span class="bt-grp">Release</span> → ' + n + ' × <code>ObservationDefinition</code></li>' +
+                '<li><span class="bt-grp bt-grp-chg">End of shelf life</span> → ' + n + ' × <code>ObservationDefinition</code>' +
+                  ' <span class="bt-chg">the change lives here</span></li>' +
+              '</ul>' +
+            '</li>' +
+            '<li><span class="bt-tag">+ context</span> MedicinalProductDefinition · Ingredient · SubstanceDefinition · Organization</li>' +
+          '</ul>' +
+        '</li>' +
+      '</ul>';
   }
 
   /* Consolidated spec — compact table with the one changed row highlighted, plus
@@ -381,6 +410,20 @@
   }
 
   /* ============================ INDUSTRY ②/③ ============================= */
+  /* The APIX transport made visible on-stage: the structured PQI Bundle is
+     encoded as a Binary, described by a DocumentReference, carried by one Task.
+     One click opens the full layered wrapper (with a real base64 decode). */
+  function apixEnvelopeHtml() {
+    return '<div class="apix-env">' +
+      '<span class="env-lbl">APIX wrapper</span>' +
+      '<span class="env-chip">Task</span><span class="env-arrow">▸</span>' +
+      '<span class="env-chip">DocumentReference</span><span class="env-arrow">▸</span>' +
+      '<span class="env-chip">Binary</span><span class="env-arrow">▸</span>' +
+      '<span class="env-chip env-bundle">PQI Bundle</span>' +
+      '<button class="link-btn" data-inspect="wrapper">open ↗</button>' +
+    '</div>';
+  }
+
   function docsHtml(inputs) {
     return inputs.map(function (inp) {
       var d = store.get(inp.valueReference.reference);
@@ -407,6 +450,7 @@
     el('pkg').innerHTML =
       '<div class="pkg-head">' + t.input.length + ' document ' +
         '<button class="link-btn" data-inspect="task">view Task</button>' + verifyLinkHtml() + '</div>' +
+      apixEnvelopeHtml() +
       docsHtml(t.input);
     show('ind-track');
     feed('Submitted');
@@ -686,6 +730,17 @@
     if (ms < 60000) return (ms / 1000).toFixed(1) + ' s';
     return (ms / 60000).toFixed(1) + ' min';
   }
+
+  /* Today → With APIX + PQI — the superiority payoff. Each pair is grounded in
+     docs/FDA-ALIGNMENT.md + the regulatory-review research spike; terse on purpose.
+     The `now` strings carry inline <strong> emphasis, so they are NOT escaped. */
+  var CONTRAST = [
+    { k: 'Content',   today: 'Re-key spec tables from a PDF narrative', now: 'Read coded <strong>ObservationDefinition</strong>s directly' },
+    { k: 'A change',  today: 'Prose to interpret',                       now: 'A <strong>computable range → range</strong> (2.0 → 1.5% w/w)' },
+    { k: 'Status',    today: 'Poll for a gateway acknowledgement',       now: 'Live status <strong>pushed</strong> (FHIR Subscription)' },
+    { k: 'Questions', today: 'By letter, out-of-band, weeks',            now: 'Structured, <strong>in-band</strong>, both sides subscribed' },
+    { k: 'OOS batch', today: 'Buried in 300 pages',                      now: 'Acceptance criterion <strong>machine-checked</strong>' }
+  ];
   function renderSummary() {
     var first = reached['submitted'];
     var rowsHtml = '', maxMs = 1, segs = [];
@@ -703,12 +758,58 @@
     });
     var last = reached['approved'] || reached['rejected'];
     var totalMs = (first && last) ? (last - first) : null;
+    var cxRows = CONTRAST.map(function (c) {
+      return '<tr><td class="cx-aspect">' + c.k + '</td>' +
+        '<td class="cx-today">' + c.today + '</td>' +
+        '<td class="cx-now">' + c.now + '</td></tr>';
+    }).join('');
     el('summary').hidden = false;
     el('summary').innerHTML =
       '<div class="sum-head">Cycle time</div>' +
       '<div class="ct-bars">' + rowsHtml + '</div>' +
-      '<div class="ct-total">Total: <strong>' + (totalMs != null ? esc(fmtElapsed(totalMs)) : '—') + '</strong></div>';
+      '<div class="ct-total">Total: <strong>' + (totalMs != null ? esc(fmtElapsed(totalMs)) : '—') + '</strong></div>' +
+      '<div class="sum-contrast">' +
+        '<div class="sum-head">Why this is superior</div>' +
+        '<table class="cx-table"><thead><tr><th></th><th>Today</th><th class="cx-now-h">With APIX + PQI</th></tr></thead>' +
+          '<tbody>' + cxRows + '</tbody></table>' +
+        '<p class="cx-src">Grounded in FDA <strong>PQ-CMC</strong> (Module 3 → ObservationDefinition), ' +
+          '<strong>KASA</strong>, <strong>ESG NextGen</strong> (REST poll, not push) and <strong>ICH Q12</strong>; ' +
+          'structured two-way messaging has no production home today. See <strong>About / FDA context</strong>.</p>' +
+      '</div>' +
+      '<button class="btn-ghost future-toggle" id="future-toggle">Future state · AI-assisted review →</button>';
     el('summary').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  /* Closing beat (opt-in): AI-assisted review, framed strictly inside FDA's
+     Jan-2025 draft "risk-based credibility assessment framework"
+     (docs/AI-FUTURE-STATE.md). Illustrative, low-risk COU, human-in-the-loop —
+     AI supports, FDA decides. The thesis lands: structured content is what makes
+     trustworthy AI assistance possible. */
+  function renderFuture() {
+    el('future').innerHTML =
+      '<div class="future-head">' +
+        '<h3>Future state — AI-assisted review</h3>' +
+        '<span class="future-badge">illustrative</span>' +
+        '<span class="future-badge">FDA draft guidance · Jan 2025</span>' +
+      '</div>' +
+      '<p class="future-sub">Because the content is <strong>structured</strong>, review can be AI-assisted within FDA’s own ' +
+        'risk-based credibility assessment framework — a narrow, low-risk <code>Context of Use</code>, human in the loop. ' +
+        'You could not do this credibly over a PDF.</p>' +
+      '<div class="ai-grid">' +
+        '<div class="ai-k">Question of interest</div>' +
+        '<div class="ai-v">Does the tested batch meet the tightened end-of-shelf-life Water Content EC (≤ 1.5% w/w)?</div>' +
+        '<div class="ai-k">Context of use</div>' +
+        '<div class="ai-v">AI <strong>pre-screens</strong> the structured spec, machine-checks the batch against the coded criteria, and <strong>drafts</strong> the assessment note.</div>' +
+        '<div class="ai-k">Model risk</div>' +
+        '<div class="ai-v"><span class="ai-risk-low">LOW</span> — deterministic check, low model influence, bounded single-variation consequence.</div>' +
+        '<div class="ai-k">Decision</div>' +
+        '<div class="ai-v">The <strong>assessor decides</strong>. Every AI step logged to the same <code>Provenance</code> audit (21 CFR Part 11 / ALCOA).</div>' +
+      '</div>' +
+      '<p class="future-foot"><strong>The point:</strong> APIX + PQI delivers the structured substrate that makes trustworthy, ' +
+        'framework-aligned AI assistance possible — AI <strong>supports</strong>, FDA <strong>decides</strong>.</p>';
+    el('future').hidden = false;
+    var tg = el('future-toggle'); if (tg) tg.disabled = true;
+    el('future').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 
   /* ============================ INSPECT ================================== */
@@ -994,9 +1095,9 @@
     renderAudit();
     el('xing').hidden = true; el('xing').className = 'xing';
     el('pane-ind').classList.remove('recv'); el('pane-ha').classList.remove('recv');
-    ['ind-author', 'ind-spec', 'ind-pkg', 'ind-rsi', 'ind-track', 'ha-content', 'ha-review', 'summary'].forEach(hide);
+    ['ind-author', 'ind-spec', 'ind-pkg', 'ind-rsi', 'ind-track', 'ha-content', 'ha-review', 'summary', 'future'].forEach(hide);
     show('ha-empty');
-    ['ind-flow', 'ha-flow', 'harmonize', 'src-legend', 'consolidated', 'pkg', 'rsi-conv', 'feed', 'reg-docs', 'reg-status', 'reg-outputs', 'review-result', 'io-list'].forEach(function (id) { el(id).innerHTML = ''; });
+    ['ind-flow', 'ha-flow', 'harmonize', 'src-legend', 'bundle-tree', 'consolidated', 'pkg', 'rsi-conv', 'feed', 'reg-docs', 'reg-status', 'reg-outputs', 'review-result', 'io-list', 'future'].forEach(function (id) { el(id).innerHTML = ''; });
     setIoCount(); closeInspect();
     setBatch('good');
     refreshControls();
@@ -1042,7 +1143,7 @@
     '<em>submissions</em> in production, and FDA is <strong>not</strong> a named APIX participant (it <em>is</em> ' +
     'a named contributor to Vulcan\'s ePI profile, with EMA and PMDA). Maturity gradient: ' +
     '<strong>KASA = production</strong> (SODF) · <strong>PQ-CMC FHIR IG = STU / draft</strong> (SODF-only, ' +
-    'voluntary / for-comment, not mandatory) · <strong>eCTD v4.0 two-way comms = planned</strong> · ' +
+    'voluntary / for-comment, not mandatory) · <strong>eCTD v4.0 two-way comms = removed from current scope</strong> · ' +
     '<strong>APIX = pre-ballot</strong> (IG v0.1.0). This demo shows the transport half in FHIR — never "FDA\'s plan."</div>' +
 
     '<div class="inspect-sec" style="border-top:none">Three distinct &ldquo;validations&rdquo;</div>' +
@@ -1078,9 +1179,9 @@
     '<tr><td><strong>TMAP / DMAP / EMAP</strong></td>' +
       '<td>APIX-over-FHIR matches FDA\'s committed "external data interfaces / industry standards / interoperable" posture. <em>Published plans.</em></td></tr>' +
     '<tr><td><strong>ESG NextGen</strong> submit / status / acknowledge</td>' +
-      '<td>APIX is the FHIR-native rendering of an ESG-NextGen-style submit-and-track API. <em>Production (REST, not FHIR).</em></td></tr>' +
+      '<td>APIX is the FHIR-native rendering of an ESG-NextGen-style submit-and-track API — NextGen is REST <em>poll</em> for status; APIX adds real-time push + structured workflow state. <strong>Complementary, not competing.</strong> <em>Production (REST, not FHIR).</em></td></tr>' +
     '<tr><td><strong>eCTD v4.0 two-way comms</strong></td>' +
-      '<td>Our regulator → industry question loop models what v4.0\'s two-way communication aims to deliver. <em>Planned phase.</em></td></tr>' +
+      '<td>FDA <strong>removed</strong> two-way communication from current eCTD v4.0; structured in-band agency&harr;sponsor messaging has <strong>no production home today</strong> — exactly the gap our regulator&harr;industry loop models. <em>Deferred / unimplemented.</em></td></tr>' +
     '<tr><td><strong>21 CFR Part 11 / ALCOA</strong></td>' +
       '<td><code>Task</code> + <code>businessStatus</code> + versioning + <code>Provenance</code> = the ' +
       'who / what / when / why audit trail by design. <em>Regulation.</em></td></tr>' +
@@ -1112,6 +1213,11 @@
     // #2 APIX wrapper: actually base64-decode the stored Binary back to the PQI Bundle.
     if (ev.target.closest('#wl-decode')) {
       decodeWrapperBinary();
+      return;
+    }
+    // Closing beat: reveal the AI-assisted-review future-state panel.
+    if (ev.target.closest('#future-toggle')) {
+      renderFuture();
       return;
     }
     var ins = ev.target.closest('[data-inspect]'); if (ins) { inspectKey(ins.getAttribute('data-inspect')); return; }

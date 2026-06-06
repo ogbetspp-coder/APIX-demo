@@ -525,9 +525,85 @@ table.grid, .val-table, .ectd-table { border-collapse: collapse; }
   background: var(--bg); border: 1px solid var(--line); border-radius: 3px; padding: 1px 6px; }
 .conv-body { color: var(--ink); line-height: 1.55; }
 
+/* ---------- anchor band: PQI · APIX · the review (instant orientation) ---------- */
+.anchor { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; max-width: 1280px; margin: 0 auto 16px; }
+.anchor-card { border: 1px solid var(--line); border-left-width: 3px; border-radius: var(--radius); padding: 10px 14px; background: var(--bg); }
+.ac-pqi { border-left-color: var(--green); }
+.ac-apix { border-left-color: var(--link); }
+.ac-flow { border-left-color: var(--navy); }
+.ac-h { display: flex; align-items: baseline; gap: 8px; }
+.ac-tag { font-family: Consolas, monospace; font-size: 11px; font-weight: 700; color: var(--navy);
+  background: var(--box-bg); border: 1px solid var(--box-border); border-radius: 3px; padding: 1px 6px; }
+.ac-role { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--ink-soft); }
+.anchor-card p { margin: 6px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--ink); }
+
+/* ---------- APIX envelope mini-diagram (makes the transport visible on-stage) ---------- */
+.apix-env { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 2px 0 10px; padding: 8px 10px;
+  background: var(--bg-alt); border: 1px solid var(--line); border-radius: var(--radius); }
+.env-lbl { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--ink-soft); margin-right: 2px; }
+.env-chip { font-family: Consolas, monospace; font-size: 11px; font-weight: 700; color: var(--navy);
+  background: var(--box-bg); border: 1px solid var(--box-border); border-radius: 3px; padding: 2px 7px; }
+.env-chip.env-bundle { color: var(--green); border-color: #c3ddc4; background: var(--green-bg); }
+.env-arrow { color: var(--ink-soft); font-size: 11px; }
+.apix-env .link-btn { margin-left: auto; }
+
+/* ---------- construction pipeline: stage captions + connector + PQI Bundle tree ---------- */
+.stage-cap { font-size: 12px; color: var(--ink-soft); line-height: 1.5; margin: 0 0 10px; }
+.stage-cap code { color: var(--navy); font-size: 11px; }
+.conn-arrow { font-size: 11.5px; font-weight: 700; color: var(--navy); text-align: center; margin: 12px 0 0; }
+.bundle-tree { margin-bottom: 14px; }
+.bt-cap { font-size: 12px; color: var(--ink-soft); line-height: 1.5; margin-bottom: 8px; }
+.bt-cap code { color: var(--navy); }
+.bt, .bt ul { list-style: none; margin: 0; padding-left: 18px; }
+.bt { padding-left: 0; }
+.bt li { font-size: 12.5px; color: var(--ink); line-height: 1.9; }
+.bt-tag { font-family: Consolas, monospace; font-size: 11px; font-weight: 700; color: var(--navy);
+  background: var(--box-bg); border: 1px solid var(--box-border); border-radius: 3px; padding: 0 5px; margin-right: 5px; }
+.bt-grp { font-weight: 700; color: var(--ink); }
+.bt-grp-chg { color: var(--amber); }
+.bt-chg { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; color: var(--amber);
+  background: var(--amber-bg); border: 1px solid #e6d49a; border-radius: 999px; padding: 0 7px; margin-left: 6px; }
+.bt code { font-size: 11px; color: var(--ink-soft); }
+
+/* ---------- superiority contrast (Today → With APIX + PQI), in the end Summary ---------- */
+.sum-contrast { margin-top: 18px; }
+.sum-contrast .sum-head { margin-bottom: 10px; }
+.cx-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.cx-table th, .cx-table td { border: 1px solid var(--line); padding: 7px 10px; text-align: left; vertical-align: top; }
+.cx-table th { background: var(--th-bg); font-size: 11px; font-weight: 700; }
+.cx-table th.cx-now-h { color: var(--green); }
+.cx-aspect { font-weight: 700; color: var(--navy); white-space: nowrap; }
+.cx-today { color: var(--ink-soft); }
+.cx-now { color: var(--ink); }
+.cx-now strong { color: var(--green); }
+.cx-src { font-size: 11px; color: var(--ink-soft); margin-top: 8px; }
+
+/* ---------- future state · AI-assisted review (illustrative; FDA Jan-2025 framework) ---------- */
+.future-toggle { margin-top: 6px; }
+.future { max-width: 1280px; margin: 14px auto 0; border: 1px solid var(--line-strong);
+  border-left: 3px solid var(--navy); border-radius: var(--radius); padding: 16px 20px; background: var(--bg); }
+.future-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+.future-head h3 { font-size: 14px; color: var(--navy); }
+.future-badge { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--amber);
+  background: var(--amber-bg); border: 1px solid #e6d49a; border-radius: 999px; padding: 1px 8px; }
+.future-sub { font-size: 12px; color: var(--ink-soft); margin: 0 0 12px; line-height: 1.5; }
+.future-sub code { color: var(--navy); }
+.ai-grid { display: grid; grid-template-columns: 168px 1fr; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.ai-k { font-size: 11.5px; font-weight: 700; color: var(--ink-soft); background: var(--bg-alt);
+  padding: 8px 11px; border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); }
+.ai-v { font-size: 12.5px; color: var(--ink); padding: 8px 11px; border-bottom: 1px solid var(--line); line-height: 1.5; }
+.ai-grid > :nth-last-child(-n+2) { border-bottom: none; }
+.ai-v code { font-size: 11px; color: var(--ink-soft); }
+.ai-risk-low { color: var(--green); font-weight: 700; }
+.future-foot { font-size: 12.5px; color: var(--ink); margin: 12px 0 0; line-height: 1.55; }
+.future-foot strong { color: var(--navy); }
+
 @media (max-width: 1000px) {
   .panes { grid-template-columns: 1fr; }
   .pane:not(.is-active) { opacity: 1; }
   .inspect { width: 100vw; }
   .ct-row { grid-template-columns: 1fr 70px; } .ct-bar { display: none; }
+  .anchor { grid-template-columns: 1fr; }
+  .ai-grid { grid-template-columns: 1fr; }
+  .ai-k { border-right: none; }
 }

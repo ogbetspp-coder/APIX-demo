@@ -36,6 +36,23 @@
   <nav class="spine" id="spine" aria-label="Submission status"></nav>
 
   <main class="stage">
+
+    <!-- ===== ANCHOR: what this is, in one read (PQI · APIX · the review) ===== -->
+    <section class="anchor" aria-label="What this is">
+      <div class="anchor-card ac-pqi">
+        <div class="ac-h"><span class="ac-tag">PQI</span><span class="ac-role">The content</span></div>
+        <p>The drug-product spec as <strong>structured, computable FHIR</strong> — not a PDF.</p>
+      </div>
+      <div class="anchor-card ac-apix">
+        <div class="ac-h"><span class="ac-tag">APIX</span><span class="ac-role">The transport</span></div>
+        <p>A <strong>FHIR&nbsp;R5 API</strong> — submit it, track it live, carry the Q&amp;A.</p>
+      </div>
+      <div class="anchor-card ac-flow">
+        <div class="ac-h"><span class="ac-tag">Review</span><span class="ac-role">Four steps</span></div>
+        <p><strong>Submit → validate → assess → decide</strong> — tracked live throughout.</p>
+      </div>
+    </section>
+
     <!-- Subscription notification crossing cue (between the panes) -->
     <div class="xing" id="xing" hidden aria-live="polite"></div>
 
@@ -53,20 +70,22 @@
           <!-- Per-side workflow (the driver for this pane) -->
           <ol class="flow" id="ind-flow" aria-label="Company workflow"></ol>
 
-          <!-- Author -->
+          <!-- Author — build the PQI Bundle from structured sources via ConceptMap -->
           <div class="stage-block" id="ind-author" hidden>
-            <div class="block-label">Author</div>
+            <div class="block-label">Harmonize structured sources</div>
+            <div class="stage-cap">Three structured systems feed the spec — no PDF, nothing re-typed.</div>
             <div class="src-legend" id="src-legend"></div>
             <div class="harmonize" id="harmonize"></div>
           </div>
 
           <div class="stage-block" id="ind-spec" hidden>
-            <div class="block-label">Consolidated specification
+            <div class="block-label">PQI Bundle
               <span class="seg" id="spec-seg">
                 <button class="seg-btn on" data-mode="doc">Document</button>
                 <button class="seg-btn" data-mode="fhir">FHIR</button>
               </span>
             </div>
+            <div class="bundle-tree" id="bundle-tree"></div>
             <div class="cons-body" id="consolidated"></div>
           </div>
 
@@ -138,6 +157,9 @@
 
     <!-- ===== impact summary (terminal only) ===== -->
     <div class="summary" id="summary" hidden></div>
+
+    <!-- ===== future state · AI-assisted review (illustrative; revealed at the end) ===== -->
+    <div class="future" id="future" hidden></div>
   </main>
 
   <!-- ===================== FOOTER (Reset + tiny progress) ================== -->
