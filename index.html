@@ -10,10 +10,9 @@
   <!-- ============================ HEADER (quiet) ============================ -->
   <header class="topbar">
     <div class="brand">
-      <div class="logo">APIX</div>
       <div class="brand-text">
         <h1>HL7 Vulcan · APIX × PQI</h1>
-        <p>PQI content · APIX FHIR R5 transport</p>
+        <p>Structured submissions, tracked in real time</p>
       </div>
     </div>
     <div class="header-tools">
@@ -23,151 +22,75 @@
         <button class="backend-opt" id="backend-live">Live</button>
       </div>
       <input class="local-base" id="local-base" type="text" spellcheck="false"
-             aria-label="Local HAPI base URL" value="http://localhost:8080/fhir" hidden>
+             aria-label="Local server base URL" value="http://localhost:8080/fhir" hidden>
       <span class="live-indicator" id="live-indicator" hidden>hapi.fhir.org/baseR5</span>
-      <button class="tool-btn" id="inspect-toggle" aria-expanded="false" title="Inspect FHIR + API calls">
+      <button class="tool-btn" id="inspect-toggle" aria-expanded="false" title="Technical detail">
         Inspect <span class="io-count" id="io-count">0</span>
       </button>
       <button class="tool-btn" id="about-btn" title="About this demo / FDA context">About / FDA context</button>
+      <button class="tool-btn" id="resetbtn" title="Start over">Reset</button>
     </div>
   </header>
 
-  <!-- ===================== STATUS SPINE (the anchor) ====================== -->
-  <nav class="spine" id="spine" aria-label="Submission status"></nav>
+  <!-- =========================== SINGLE-COLUMN STAGE ======================= -->
+  <main class="stage" id="stage">
+    <div class="column">
 
-  <main class="stage">
-
-    <!-- ===== ANCHOR: what this is, in one read (PQI · APIX · the review) ===== -->
-    <section class="anchor" aria-label="What this is">
-      <div class="anchor-card ac-pqi">
-        <div class="ac-h"><span class="ac-tag">PQI</span><span class="ac-role">The content</span></div>
-        <p>The drug-product spec as <strong>structured, computable FHIR</strong> — not a PDF.</p>
-      </div>
-      <div class="anchor-card ac-apix">
-        <div class="ac-h"><span class="ac-tag">APIX</span><span class="ac-role">The transport</span></div>
-        <p>A <strong>FHIR&nbsp;R5 API</strong> — submit it, track it live, carry the Q&amp;A.</p>
-      </div>
-      <div class="anchor-card ac-flow">
-        <div class="ac-h"><span class="ac-tag">Review</span><span class="ac-role">Four steps</span></div>
-        <p><strong>Submit → validate → assess → decide</strong> — tracked live throughout.</p>
-      </div>
-    </section>
-
-    <!-- Subscription notification crossing cue (between the panes) -->
-    <div class="xing" id="xing" hidden aria-live="polite"></div>
-
-    <div class="panes">
-
-      <!-- ===================== INDUSTRY — SynthPharma AG ===================== -->
-      <section class="pane" id="pane-ind">
-        <div class="pane-head">
-          <span class="ph-tag">IND</span>
-          <span class="pane-title">SynthPharma AG</span>
-          <small>Industry</small>
-        </div>
-        <div class="pane-body" id="ind-body">
-
-          <!-- Per-side workflow (the driver for this pane) -->
-          <ol class="flow" id="ind-flow" aria-label="Company workflow"></ol>
-
-          <!-- Author → one structured artifact: the PQI Bundle (Document ⇄ FHIR).
-               Built from 3 structured systems via ConceptMap; mappings live in Inspect. -->
-          <div class="stage-block" id="ind-spec" hidden>
-            <div class="block-label">PQI Bundle
-              <span class="seg" id="spec-seg">
-                <button class="seg-btn on" data-mode="doc">Document</button>
-                <button class="seg-btn" data-mode="fhir">FHIR</button>
-              </span>
-            </div>
-            <div class="cons-body" id="consolidated"></div>
-          </div>
-
-          <!-- Submit (the one payload, after submit) -->
-          <div class="stage-block" id="ind-pkg" hidden>
-            <div class="block-label">Submitted</div>
-            <div id="pkg"></div>
-          </div>
-
-          <!-- RSI exchange — List of Questions (HA → Industry) + the response -->
-          <div class="stage-block" id="ind-rsi" hidden>
-            <div class="block-label">Request for Supplementary Information</div>
-            <div class="conv" id="rsi-conv"></div>
-          </div>
-
-          <!-- Track (quiet activity feed) -->
-          <div class="stage-block" id="ind-track" hidden>
-            <div class="block-label">Track</div>
-            <div class="feed" id="feed"></div>
-          </div>
-
-        </div>
+      <!-- ===== 2. Value line ===== -->
+      <section class="value" aria-label="What this shows">
+        <h2 class="value-head">One quality change, submitted as data — tracked end to end.</h2>
+        <p class="value-sub">Today a change like this travels as PDFs through a gateway and is reviewed by hand,
+          with no live status. Here it moves as structured data over a live connection: received instantly,
+          checked automatically, and visible at every step.</p>
       </section>
 
-      <!-- ===================== HEALTH AUTHORITY ===================== -->
-      <section class="pane" id="pane-ha">
-        <div class="pane-head">
-          <span class="ph-tag">REG</span>
-          <span class="pane-title">Health Authority</span>
-          <small>Regulator</small>
-        </div>
-        <div class="pane-body" id="ha-body">
+      <hr class="rule">
 
-          <div class="empty-state" id="ha-empty">Awaiting submission</div>
-
-          <div id="ha-content" hidden>
-
-            <!-- Per-side workflow (the driver for this pane) -->
-            <ol class="flow" id="ha-flow" aria-label="Regulator workflow"></ol>
-
-            <!-- Received (auto): payload landed conformant, received, admin-validated -->
-            <div class="stage-block" id="ha-received">
-              <div class="block-label">Received</div>
-              <div class="reg-status" id="reg-status"></div>
-              <div id="reg-docs"></div>
-            </div>
-
-            <!-- Assess (human scientific/technical content review) -->
-            <div class="stage-block" id="ha-review" hidden>
-              <div class="block-label">Assess — acceptance criteria</div>
-              <div class="batch-toggle" id="batch-toggle">
-                <span class="batch-lbl">Tested batch</span>
-                <button class="batch-opt on" id="batch-good" data-batch="good">Good batch</button>
-                <button class="batch-opt" id="batch-bad" data-batch="bad">Bad batch</button>
-              </div>
-              <div class="review-actions">
-                <button data-doc="pdf">Open PDF</button>
-              </div>
-              <div id="review-result"></div>
-            </div>
-
-            <div id="reg-outputs"></div>
-          </div>
-
-        </div>
+      <!-- ===== 3. The case ===== -->
+      <section class="case" aria-label="The submission">
+        <h3 class="case-title">Velexa 175 mg film-coated tablets <span class="case-kind">— Type IB variation</span></h3>
+        <p class="case-change">End-of-shelf-life water limit:
+          <span class="diff-old" id="case-old">2.0%</span>
+          <span class="case-to">→</span>
+          <span class="diff-new" id="case-new">1.5%</span></p>
+        <p class="case-reason">Tightened in line with updated 36-month stability data.</p>
+        <p class="case-note">Compiled automatically from three lab systems — no manual transcription.
+          <button class="link-btn" id="view-spec">View specification</button></p>
       </section>
+
+      <hr class="rule">
+
+      <!-- ===== 4. Workflow tracker ===== -->
+      <nav class="tracker" id="tracker" aria-label="Submission progress"></nav>
+
+      <!-- ===== 5. Current-step focus ===== -->
+      <section class="focus" id="focus" aria-label="Current step"></section>
+
+      <hr class="rule">
+
+      <!-- ===== 6. Activity log ===== -->
+      <section class="log-sec" aria-label="Activity">
+        <div class="log-head">Activity</div>
+        <div class="log" id="log"></div>
+      </section>
+
+      <!-- ===== 7. End payoff (after decision) ===== -->
+      <section class="payoff" id="payoff" hidden></section>
+
+      <!-- ===== future state · AI-assisted review (revealed from the payoff) ===== -->
+      <div class="future" id="future" hidden></div>
 
     </div>
-
-    <!-- ===== impact summary (terminal only) ===== -->
-    <div class="summary" id="summary" hidden></div>
-
-    <!-- ===== future state · AI-assisted review (illustrative; revealed at the end) ===== -->
-    <div class="future" id="future" hidden></div>
   </main>
 
-  <!-- ===================== FOOTER (Reset + tiny progress) ================== -->
-  <footer class="controls">
-    <span id="progress" class="progress"></span>
-    <button id="resetbtn" class="btn-ghost">Reset</button>
-  </footer>
-
-  <!-- =================== INSPECT slide-over (the ONE affordance) =========== -->
+  <!-- =================== INSPECT slide-over (the ONLY place FHIR appears) === -->
   <aside class="inspect" id="inspect" hidden>
     <div class="inspect-head">
       <span class="inspect-title">Inspect</span>
       <button class="inspect-close" id="inspect-close">×</button>
     </div>
     <div class="inspect-body">
+      <p class="inspect-tech-note">Technical detail — real FHIR R5.</p>
       <div class="inspect-focus" id="inspect-focus"></div>
       <div class="inspect-sec" id="audit-sec" hidden>Audit trail
         <span class="audit-count" id="audit-count">0</span></div>
