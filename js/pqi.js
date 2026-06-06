@@ -27,7 +27,7 @@ APIX.pqi = (function () {
     label: 'End-of-shelf-life Water Content limit',
     before: 'NMT 2.0% w/w',
     after: 'NMT 1.5% w/w',
-    rationale: 'Tightened in line with updated 36-month stability data (Type IB, B.II.d.1).'
+    rationale: 'Tightened on updated 36-month stability data; a stability-indicating limit, filed as a Type IB variation (B.II.d.1).'
   };
 
   /* ---- Mocked source systems (heterogeneous, "messy") ------------------- */
@@ -91,7 +91,7 @@ APIX.pqi = (function () {
         { appliesTo: 'Impurity 3', high: 0.3 }, { appliesTo: 'Individual unspecified', high: 0.2 },
         { appliesTo: 'Total degradation products', high: 1.4 } ] },
       shelfLife: { ranges: [
-        { appliesTo: 'Impurity 1', high: 0.8 }, { appliesTo: 'Impurity 2', high: 0.4 },
+        { appliesTo: 'Impurity 1', high: 0.5 }, { appliesTo: 'Impurity 2', high: 0.4 },
         { appliesTo: 'Impurity 3', high: 0.4 }, { appliesTo: 'Individual unspecified', high: 0.5 },
         { appliesTo: 'Total degradation products', high: 2.3 } ] } },
     { code: 'WaterContent', display: 'Water Content', method: 'USP <921>',

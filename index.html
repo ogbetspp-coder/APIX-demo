@@ -24,7 +24,7 @@
       <input class="local-base" id="local-base" type="text" spellcheck="false"
              aria-label="Local server base URL" value="http://localhost:8080/fhir" hidden>
       <span class="live-indicator" id="live-indicator" hidden>hapi.fhir.org/baseR5</span>
-      <button class="tool-btn" id="inspect-toggle" aria-expanded="false" title="Technical detail">
+      <button class="tool-btn" id="inspect-toggle" aria-expanded="false" title="Technical detail — real FHIR R5 resources &amp; live API calls">
         Inspect <span class="io-count" id="io-count">0</span>
       </button>
       <button class="tool-btn" id="about-btn" title="About this demo / FDA context">About / FDA context</button>
@@ -36,31 +36,37 @@
   <main class="stage" id="stage">
     <div class="column">
 
-      <!-- ===== 2. Value line ===== -->
+      <!-- ===== 2. Value line + the ROI, front-loaded ===== -->
       <section class="value" aria-label="What this shows">
         <h2 class="value-head">One quality change, submitted as data — tracked end to end.</h2>
         <p class="value-sub">Today a change like this travels as PDFs through a gateway and is reviewed by hand,
           with no live status. Here it moves as structured data over a live connection: received instantly,
           checked automatically, and visible at every step.</p>
+        <p class="value-stat">
+          <span class="stat-then">Today</span> weeks of assembled PDFs and mailed letters
+          <span class="stat-div">·</span>
+          <span class="stat-now">Here</span> one structured exchange, tracked live and audited</p>
       </section>
-
-      <hr class="rule">
 
       <!-- ===== 3. The case ===== -->
       <section class="case" aria-label="The submission">
-        <h3 class="case-title">Velexa 175 mg film-coated tablets <span class="case-kind">— Type IB variation</span></h3>
-        <p class="case-change">End-of-shelf-life water limit:
+        <h3 class="case-title">Velexa 175 mg film-coated tablets <span class="case-kind">· Type IB variation</span></h3>
+        <p class="case-change">End-of-shelf-life water limit
           <span class="diff-old" id="case-old">2.0%</span>
           <span class="case-to">→</span>
           <span class="diff-new" id="case-new">1.5%</span></p>
-        <p class="case-reason">Tightened in line with updated 36-month stability data.</p>
-        <p class="case-note">Compiled automatically from three lab systems — no manual transcription.
+        <p class="case-reason">Tightened on updated 36-month stability data — a stability-indicating limit,
+          filed as a Type IB variation.</p>
+        <p class="case-note">Built from structured source data — not re-typed from a PDF.
           <button class="link-btn" id="view-spec">View specification</button></p>
       </section>
 
-      <hr class="rule">
-
-      <!-- ===== 4. Workflow tracker ===== -->
+      <!-- ===== 4. The two parties + workflow tracker ===== -->
+      <div class="parties" id="parties" aria-hidden="true">
+        <span class="party" id="party-ind">SynthPharma AG</span>
+        <span class="party-arrow">→</span>
+        <span class="party" id="party-ha">Health Authority</span>
+      </div>
       <nav class="tracker" id="tracker" aria-label="Submission progress"></nav>
 
       <!-- ===== 5. Current-step focus ===== -->

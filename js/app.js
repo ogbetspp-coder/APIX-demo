@@ -138,13 +138,15 @@
     var anyFail = results.some(function (v) { return !v.pass; });
     if (anyFail) {
       return '<div class="result result-fail">' +
-        '<span class="result-mark">✗</span>' +
-        '<span class="result-text">Exceeds the new limit — caught automatically</span></div>' +
+          '<span class="result-mark">✗</span>' +
+          '<span class="result-text">Exceeds the new limit</span></div>' +
+        '<p class="result-conseq">Flagged automatically — before any human opened the file.</p>' +
         '<button class="link-btn" data-inspect="batch">see the criteria</button>';
     }
     return '<div class="result result-pass">' +
-      '<span class="result-mark">✓</span>' +
-      '<span class="result-text">Meets the new limit (≤ 1.5%)</span></div>' +
+        '<span class="result-mark">✓</span>' +
+        '<span class="result-text">Meets the new limit (≤ 1.5%)</span></div>' +
+      '<p class="result-conseq">Verified against the coded limit — no manual re-checking.</p>' +
       '<button class="link-btn" data-inspect="batch">see the criteria</button>';
   }
 
@@ -190,8 +192,15 @@
     el('log').scrollTop = el('log').scrollHeight;
   }
 
+  /* Two-party hand-off cue: emphasize whichever side is acting now. */
+  function renderParties() {
+    var ind = el('party-ind'), ha = el('party-ha');
+    if (ind) ind.classList.toggle('on', active === 'submit');
+    if (ha) ha.classList.toggle('on', active === 'received' || active === 'review' || active === 'decision');
+  }
+
   /* ============================ DISPATCH ================================ */
-  function refresh() { renderTracker(); renderFocus(); }
+  function refresh() { renderTracker(); renderParties(); renderFocus(); }
 
   /* A surface button was clicked. */
   async function runAct(actKey) {
@@ -331,11 +340,13 @@
     var first = reached['submitted'];
     var last = reached['approved'] || reached['rejected'] || done.decision;
     var elapsed = (first && last) ? fmtElapsed(last - first) : '—';
-    var verb = decided === 'reject' ? 'Decision' : 'Decision';
+    var head = decided === 'approve'
+      ? 'Approved in ' + esc(elapsed) + ' — end to end, every step time-stamped and audited.'
+      : 'Decision in ' + esc(elapsed) + ' — not approved; every step time-stamped and audited.';
     var p = el('payoff');
     p.hidden = false;
     p.innerHTML =
-      '<h3 class="payoff-head">' + esc(verb) + ' in ' + esc(elapsed) + ', end to end — every step time-stamped and audited.' +
+      '<h3 class="payoff-head">' + head +
         ' <button class="link-btn" data-inspect="audit">audit trail</button></h3>' +
       '<p class="payoff-contrast">The paper equivalent: weeks of assembled documents, manual review, and status by letter.</p>' +
       '<button class="btn-ghost" id="future-toggle">Future state · AI-assisted review →</button>';
@@ -349,7 +360,7 @@
     { who: 'AI',    title: 'Read',      desc: 'Read the structured submission and spot the change.' },
     { who: 'AI',    title: 'Check',     desc: 'Check the batch against the coded acceptance limit.' },
     { who: 'AI',    title: 'Draft',     desc: 'Draft the assessment note and risk flag.' },
-    { who: 'AI',    title: 'Recommend', desc: 'Hand to the assessor with a recommendation.' },
+    { who: 'AI',    title: 'Summarize', desc: 'Summarize the findings for the assessor.' },
     { who: 'Human', title: 'Decide',    desc: 'Assessor approves, asks, or rejects.' }
   ];
   function renderFuture() {
@@ -364,9 +375,9 @@
       '<div class="future-head"><h3>Future state — AI-assisted review</h3>' +
         '<span class="future-badge">illustrative</span></div>' +
       '<div class="ai-flow">' + steps + '</div>' +
-      '<p class="future-foot">A narrow, low-risk use, human-in-the-loop — AI <strong>supports</strong>, ' +
-        'FDA <strong>decides</strong>; every step audited. Possible only because the content is ' +
-        '<strong>structured</strong>.</p>';
+      '<p class="future-foot">A narrow, low-risk use — the limit is a deterministic numeric check — with the ' +
+        'human in the loop: AI <strong>supports</strong>, FDA <strong>decides</strong>; every step audited. ' +
+        'Possible only because the content is <strong>structured</strong>.</p>';
     el('future').hidden = false;
     var tg = el('future-toggle'); if (tg) tg.disabled = true;
     el('future').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -420,7 +431,7 @@
     'received': 'Received — the authority has acknowledged receipt of the submission.',
     'validation-successful': 'Administratively validated — complete and correctly classified; eligible for assessment.',
     'under-assessment': 'Under assessment — an assessor is reviewing the structured specification.',
-    'clock-stop': 'On hold — Clock stop: review paused awaiting the applicant’s response to the List of Questions.',
+    'clock-stop': 'On hold — review paused pending the applicant’s response to the authority’s questions (an Information Request; EU term: RSI).',
     'clock-restart': 'Clock restart — the applicant has responded; assessment resumes.',
     'approved': 'Approved — the variation has been accepted; the specification change takes effect.',
     'rejected': 'Rejected — the variation was not accepted (see the grounds on the decision letter).'
@@ -542,7 +553,7 @@
         (v.pass ? 'PASS' : 'FAIL') + '</td></tr>';
     }).join('');
     var banner = anyFail
-      ? '<div class="val-banner val-banner-fail">OUT OF SPECIFICATION</div>'
+      ? '<div class="val-banner val-banner-fail">FAILS PROPOSED CRITERION</div>'
       : '<div class="val-banner val-banner-pass">All criteria met</div>';
     el('inspect-focus').innerHTML =
       '<div class="if-title">Acceptance criteria — batch vs. structured ObservationDefinitions</div>' +

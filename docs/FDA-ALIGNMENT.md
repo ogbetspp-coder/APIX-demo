@@ -33,7 +33,7 @@ FHIR, aligned with what you've already shipped"* — never as "FDA's plan."
 | **TMAP/DMAP/EMAP** | "APIX-over-FHIR = the 'external data interfaces / industry standards / interoperable' posture FDA committed to." | Published plans |
 | **BEST + Apr-2025 FHIR docket** | "FHIR for regulatory data isn't hypothetical at FDA." | Pilot / exploratory |
 | **ESG NextGen REST API** | "APIX is the FHIR-native rendering of an ESG-NextGen-style submit-and-track API." | Production (REST) |
-| **eCTD v4.0 two-way comms** | "Our regulator→industry question loop = what v4.0 two-way comms aims to deliver, modeled in FHIR." | Planned phase |
+| **eCTD v4.0 two-way comms** | "Our regulator→industry question loop = what v4.0 two-way comms aimed to deliver — but FDA **removed** two-way comms from current scope, so structured in-band messaging has no production home today." | Removed / deferred |
 | **Part 11 / ALCOA** | "`Task`+`businessStatus`+versioning+`Provenance` = the who/what/when/why audit trail by design." | Regulation |
 | **RTOR / Project Orbis / reliance** | "One valid R5 payload, many sovereign regulators — structured data > narrative." | Program / pilot |
 

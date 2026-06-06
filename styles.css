@@ -76,19 +76,35 @@ code, pre { font-family: Consolas, "Lucida Console", "Courier New", monospace; }
 .column { max-width: 860px; margin: 0 auto; }
 .rule { border: none; border-top: 1px solid var(--line); margin: 36px 0; }
 
-/* ---- 2. Value line ---- */
-.value-head { font-size: 26px; line-height: 1.3; font-weight: 700; letter-spacing: -.3px; }
+/* ---- 2. Value line + front-loaded ROI ---- */
+.value-head { font-size: 31px; line-height: 1.25; font-weight: 700; letter-spacing: -.4px; }
 .value-sub { margin: 16px 0 0; font-size: 16px; color: var(--ink-soft); max-width: 760px; }
+.value-stat { margin: 18px 0 0; font-size: 14px; color: var(--ink-soft); }
+.stat-then, .stat-now { font-weight: 700; text-transform: uppercase; letter-spacing: .5px; font-size: 10.5px;
+  padding: 2px 8px; border-radius: 999px; margin-right: 8px; }
+.stat-then { color: var(--ink-soft); background: var(--bg-alt); border: 1px solid var(--line); }
+.stat-now { color: var(--navy); background: var(--box-bg); border: 1px solid var(--box-border); }
+.stat-div { color: var(--ink-faint); margin: 0 12px; }
 
-/* ---- 3. The case ---- */
-.case-title { font-size: 19px; font-weight: 700; }
-.case-kind { color: var(--ink-soft); font-weight: 400; font-size: 16px; }
-.case-change { font-size: 16px; margin: 14px 0 0; }
-.case-to { color: var(--ink-faint); margin: 0 6px; }
+/* ---- 3. The case (calm reference panel; the change is the focal element) ---- */
+.case { margin-top: 36px; background: var(--bg-alt); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 18px 22px; }
+.case-title { font-size: 17px; font-weight: 700; }
+.case-kind { color: var(--ink-soft); font-weight: 400; font-size: 15px; }
+.case-change { font-size: 15px; color: var(--ink); margin: 14px 0 0; }
+.case-change .case-to { color: var(--ink-faint); margin: 0 8px; font-size: 18px; }
+.case-change .diff-old { font-size: 20px; }
+.case-change .diff-new { font-size: 24px; }
 .diff-old { color: var(--red); text-decoration: line-through; }
 .diff-new { color: var(--navy); font-weight: 700; }
-.case-reason { margin: 8px 0 0; color: var(--ink-soft); }
-.case-note { margin: 14px 0 0; color: var(--ink-soft); font-size: 14px; }
+.case-reason { margin: 12px 0 0; color: var(--ink-soft); font-size: 14px; }
+.case-note { margin: 10px 0 0; color: var(--ink-soft); font-size: 14px; }
+
+/* ---- the two parties (active side emphasized) ---- */
+.parties { display: flex; align-items: center; gap: 12px; margin: 32px 0 14px; }
+.party { font-size: 13px; font-weight: 700; color: var(--ink-faint); }
+.party.on { color: var(--navy); }
+.party-arrow { color: var(--ink-faint); font-weight: 700; }
 .link-btn { border: none; background: none; color: var(--link); cursor: pointer; font-size: 14px;
   font-family: inherit; padding: 0; }
 .link-btn:hover { text-decoration: underline; }
@@ -107,11 +123,13 @@ code, pre { font-family: Consolas, "Lucida Console", "Courier New", monospace; }
 .tk-active .tk-lbl { color: var(--navy); font-weight: 700; }
 .tk-done .tk-lbl { color: var(--ink); }
 
-/* ---- 5. Current-step focus ---- */
-.focus { margin-top: 28px; }
+/* ---- 5. Current-step focus (the live step reads as the active surface) ---- */
+.focus { margin-top: 24px; background: var(--bg); border: 1px solid var(--line-strong);
+  border-left: 3px solid var(--navy); border-radius: var(--radius); padding: 20px 22px; }
+.focus:empty { display: none; }
 .focus-actor { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px;
   color: var(--navy); }
-.focus-title { font-size: 20px; font-weight: 700; margin: 6px 0 0; }
+.focus-title { font-size: 19px; font-weight: 700; margin: 6px 0 0; }
 .focus-desc { font-size: 15px; color: var(--ink-soft); margin: 8px 0 0; }
 .focus-auto { font-size: 14px; color: var(--green); margin: 12px 0 0; }
 .focus-controls { margin-top: 20px; display: flex; gap: 10px; flex-wrap: wrap; }
@@ -132,15 +150,17 @@ code, pre { font-family: Consolas, "Lucida Console", "Courier New", monospace; }
 .pick-opt:hover { background: var(--bg-alt); }
 .pick-opt.on { color: #fff; background: var(--navy); border-color: var(--navy); }
 
-/* batch result — the ONLY use of success-green / fail-red on the surface */
-.batch-result { margin-top: 20px; }
+/* batch result — the ONLY use of success-green / fail-red on the surface.
+   Staged as a full-width reveal beneath the controls, not an inline field. */
+.batch-result { margin-top: 24px; }
 .batch-result:empty { display: none; }
-.result { display: inline-flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 700;
-  border-radius: var(--radius); padding: 12px 16px; }
-.result-pass { color: var(--green); background: var(--green-bg); border: 1px solid #c3ddc4; }
-.result-fail { color: #fff; background: var(--red); }
-.result-mark { font-size: 17px; }
-.batch-result .link-btn { display: block; margin-top: 10px; }
+.result { display: flex; align-items: center; gap: 12px; width: 100%; font-size: 22px; font-weight: 700;
+  border-radius: var(--radius); padding: 18px 20px; }
+.result-pass { color: var(--green); background: var(--green-bg); border: 1px solid #bcdcbe; }
+.result-fail { color: #fff; background: var(--red); border: 1px solid var(--red); }
+.result-mark { font-size: 24px; }
+.result-conseq { margin: 12px 0 0; font-size: 15px; color: var(--ink); }
+.batch-result .link-btn { display: inline-block; margin-top: 10px; }
 
 /* decision */
 .decision-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 20px; }
@@ -173,9 +193,9 @@ code, pre { font-family: Consolas, "Lucida Console", "Courier New", monospace; }
 .payoff-head .link-btn { font-size: 14px; font-weight: 400; }
 .payoff-contrast { margin: 14px 0 24px; color: var(--ink-soft); font-size: 15px; }
 
-/* future-state AI stepper */
-.future { margin-top: 24px; padding: 20px 22px; border: 1px solid var(--line-strong);
-  border-left: 3px solid var(--navy); border-radius: var(--radius); background: var(--bg); }
+/* future-state AI stepper — a quiet appendix below the payoff (not a primary callout) */
+.future { margin-top: 24px; padding: 18px 22px; border: 1px solid var(--line);
+  border-radius: var(--radius); background: var(--bg-alt); }
 .future-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
 .future-head h3 { font-size: 16px; color: var(--navy); }
 .future-badge { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--amber);
