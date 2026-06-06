@@ -75,8 +75,14 @@
   /* ============================ STATUS SPINE =============================== */
   /* Draft/Author → businessStatusFlow → Decision. The whole exchange is just
      this advancing: current navy, reached get a check + timestamp, future muted. */
+  /* One clean linear pipeline: Draft → Submitted → Received → Validated →
+     Assessing → Decision. The terminal 'approved' milestone is folded into the
+     single 'Decision' node (reached on approve OR reject) so there is never a
+     dangling "Approved" node on a rejection. */
   var SPINE = [{ code: 'draft', label: 'Draft' }]
-    .concat(APIX.businessStatusFlow.map(function (m) { return { code: m.code, label: m.label }; }))
+    .concat(APIX.businessStatusFlow
+      .filter(function (m) { return m.code !== 'approved'; })
+      .map(function (m) { return { code: m.code, label: m.label }; }))
     .concat([{ code: 'decision', label: 'Decision' }]);
 
   /* Resolve which spine node is "current" from the live phase. */
@@ -177,7 +183,8 @@
     renderFlow('ha');
     setActivePane(inFlight ? null : turn);
     var label = phase === 'done' ? 'Complete'
-      : (turn === 'ind' ? 'SynthPharma' : 'Health Authority') + ' · ' + phase;
+      : (turn === 'ind' ? 'SynthPharma' : 'Health Authority') + ' · ' +
+        (phase.charAt(0).toUpperCase() + phase.slice(1));
     el('progress').textContent = label;
   }
 
