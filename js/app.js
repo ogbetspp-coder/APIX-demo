@@ -202,13 +202,10 @@
     if (actKey === 'answer')        return doAnswer();
   }
 
+  /* Switching the tested batch clears any prior result (re-run required). */
   function setBatch(key) {
     if (inFlight) return;
     batchKey = key;
-    el('batch-result') && (function () {
-      // re-render just the pick highlight + result if already checked
-    })();
-    if (batchChecked) batchChecked = true; // keep prior result until re-run? No — clear it.
     batchChecked = false;
     renderFocus();
   }
