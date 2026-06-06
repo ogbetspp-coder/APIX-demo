@@ -70,14 +70,8 @@
           <!-- Per-side workflow (the driver for this pane) -->
           <ol class="flow" id="ind-flow" aria-label="Company workflow"></ol>
 
-          <!-- Author — build the PQI Bundle from structured sources via ConceptMap -->
-          <div class="stage-block" id="ind-author" hidden>
-            <div class="block-label">Harmonize structured sources</div>
-            <div class="stage-cap">Three structured systems feed the spec — no PDF, nothing re-typed.</div>
-            <div class="src-legend" id="src-legend"></div>
-            <div class="harmonize" id="harmonize"></div>
-          </div>
-
+          <!-- Author → one structured artifact: the PQI Bundle (Document ⇄ FHIR).
+               Built from 3 structured systems via ConceptMap; mappings live in Inspect. -->
           <div class="stage-block" id="ind-spec" hidden>
             <div class="block-label">PQI Bundle
               <span class="seg" id="spec-seg">
@@ -85,7 +79,6 @@
                 <button class="seg-btn" data-mode="fhir">FHIR</button>
               </span>
             </div>
-            <div class="bundle-tree" id="bundle-tree"></div>
             <div class="cons-body" id="consolidated"></div>
           </div>
 

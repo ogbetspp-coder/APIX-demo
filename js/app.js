@@ -286,82 +286,35 @@
     return 'org-lims';
   }
 
-  function renderLegend() {
-    el('src-legend').innerHTML = SOURCES.map(function (s) {
-      return '<span class="src-chip ' + s.cls + '"><span class="src-dot"></span>' + esc(s.label) + '</span>';
-    }).join('');
-  }
-
-  /* Author — one action: reveal the colored source legend, the harmonize
-     mapping table (Local term → PQI term; each row fires a real
-     ConceptMap/$translate, visible in Inspect), AND the consolidated ONE
-     structured specification. Each spec row visibly ARRIVES from its source
-     system: a calm staggered reveal where the row carries its source color
-     (a colored lane on the left) as it lands. */
+  /* Author — produce ONE structured artifact: the PQI Bundle. Each local term
+     fires a real FHIR ConceptMap / $translate (visible in Inspect → API calls);
+     the full local→standard mapping is one click away ("view mappings"). No
+     on-stage wall of tables — the colored spec + the change tell the story. */
   function handleAuthor() {
-    show('ind-author');
-    renderLegend();
-    var rows = APIX.terminology.rows();
-    // Columns are exactly Local term → PQI term (no Relationship column). Origin
-    // is shown as a colored left-lane + a small source label inside the Local
-    // cell, so the table reads as an ASSEMBLY from three colored source systems.
-    el('harmonize').innerHTML =
-      '<div class="stage-cap">Each local code is mapped to a PQI standard term by a real FHIR ' +
-        '<code>ConceptMap</code> · <code>$translate</code> — structured in, structured out.</div>' +
-      '<table class="grid map-table"><thead><tr>' +
-        '<th>Source · local code</th><th class="map-arrow-th"></th><th>PQI standard term</th>' +
-      '</tr></thead><tbody id="map-rows"></tbody></table>' +
-      '<div class="conn-arrow">↓ assembled into one PQI Bundle</div>';
-    var body = el('map-rows');
-    rows.forEach(function (r, n) {
-      var skey = srcOf(r.source.code);
-      var scls = srcCls(skey);
-      var slabel = (function () { for (var i = 0; i < SOURCES.length; i++) if (SOURCES[i].key === skey) return SOURCES[i].label; return 'LIMS'; })();
-      var tr = document.createElement('tr');
-      tr.className = 'map-row ' + scls;
-      tr.innerHTML =
-        '<td class="m-local">' +
-          '<span class="m-src-tag"><span class="src-dot ' + scls + '"></span>' + esc(slabel) + '</span>' +
-          '<span class="m-disp">' + esc(r.source.display) + '</span> <code>' + esc(r.source.code) + '</code></td>' +
-        '<td class="m-arrow">→</td>' +
-        '<td><span class="m-disp m-tgt">' + esc(r.target.display) + '</span> <code>' + esc(r.target.code) + '</code></td>';
-      body.appendChild(tr);
-      (function (row, node) {
-        setTimeout(function () {
-          node.classList.add('in');
-          APIX.client.translate(row.source.system, row.source.code);
-        }, 140 * n + 80);
-      })(r, tr);
+    APIX.terminology.rows().forEach(function (r, n) {
+      setTimeout(function () { APIX.client.translate(r.source.system, r.source.code); }, 60 * n + 40);
     });
     APIX.pqi.normalize();
     show('ind-spec');
-    renderBundleTree();
     renderConsolidated();
   }
 
-  /* The OUTPUT made unmistakable: the harmonized terms become coded
-     ObservationDefinitions, grouped by one PlanDefinition — the PQI Bundle.
-     A compact structure tree so there is zero doubt what was built. */
-  function renderBundleTree() {
-    var n = (APIX.pqi.tests || []).length;
-    var total = 2 * n + 5;   // n release ODs + n shelf ODs + 1 PlanDefinition + 4 context
-    el('bundle-tree').innerHTML =
-      '<div class="bt-cap">Every harmonized term becomes a coded <code>ObservationDefinition</code>; ' +
-        'grouped by one <code>PlanDefinition</code> — together, the PQI Bundle.</div>' +
-      '<ul class="bt">' +
-        '<li><span class="bt-tag">Bundle</span> collection · ' + total + ' resources' +
-          '<ul>' +
-            '<li><span class="bt-tag">PlanDefinition</span> Specification for Drug Product' +
-              '<ul>' +
-                '<li><span class="bt-grp">Release</span> → ' + n + ' × <code>ObservationDefinition</code></li>' +
-                '<li><span class="bt-grp bt-grp-chg">End of shelf life</span> → ' + n + ' × <code>ObservationDefinition</code>' +
-                  ' <span class="bt-chg">the change lives here</span></li>' +
-              '</ul>' +
-            '</li>' +
-            '<li><span class="bt-tag">+ context</span> MedicinalProductDefinition · Ingredient · SubstanceDefinition · Organization</li>' +
-          '</ul>' +
-        '</li>' +
-      '</ul>';
+  /* The local→PQI ConceptMap mapping, on demand in the Inspect slide-over: every
+     row is a real $translate (Source · local code → PQI standard term), colored
+     by origin system. Keeps the construction provable without cluttering stage. */
+  function renderHarmonizeFocus() {
+    var body = APIX.terminology.rows().map(function (r) {
+      var skey = srcOf(r.source.code), scls = srcCls(skey);
+      var slabel = (function () { for (var i = 0; i < SOURCES.length; i++) if (SOURCES[i].key === skey) return SOURCES[i].label; return 'LIMS'; })();
+      return '<tr class="map-row in ' + scls + '">' +
+        '<td class="m-local"><span class="m-src-tag"><span class="src-dot ' + scls + '"></span>' + esc(slabel) + '</span>' +
+          '<span class="m-disp">' + esc(r.source.display) + '</span> <code>' + esc(r.source.code) + '</code></td>' +
+        '<td class="m-arrow">→</td>' +
+        '<td><span class="m-disp m-tgt">' + esc(r.target.display) + '</span> <code>' + esc(r.target.code) + '</code></td></tr>';
+    }).join('');
+    el('inspect-focus').innerHTML = '<div class="if-title">ConceptMap · $translate — local code → PQI standard term</div>' +
+      '<table class="grid map-table"><thead><tr><th>Source · local code</th><th class="map-arrow-th"></th><th>PQI standard term</th></tr></thead>' +
+      '<tbody>' + body + '</tbody></table>';
   }
 
   /* Consolidated spec — compact table with the one changed row highlighted, plus
@@ -379,7 +332,7 @@
     }
     var rows = APIX.pqi.specRows().map(function (r) {
       var shelf = r.changed
-        ? '<span class="diff-old">' + esc(r.before) + '</span> <span class="diff-new">' + esc(r.shelfLife) + ' w/w</span>'
+        ? '<span class="diff-new">' + esc(r.shelfLife) + ' w/w</span>'
         : esc(r.shelfLife);
       return '<tr' + (r.changed ? ' class="row-changed"' : '') + '>' +
         '<td>' + esc(r.test) + '</td>' +
@@ -399,7 +352,9 @@
         '<span class="src-chip org-lims"><span class="src-dot"></span>Release ← LIMS</span>' +
         '<span class="src-chip org-stab"><span class="src-dot"></span>End of shelf life ← Stability System</span>' +
         '<span class="src-chip org-meth"><span class="src-dot"></span>Method ← Method Repository</span>' +
-      '</div>';
+      '</div>' +
+      '<div class="cmap-line">Harmonized from 3 structured systems · FHIR <code>ConceptMap</code> · <code>$translate</code> ' +
+        '<button class="link-btn" data-inspect="harmonize">view mappings</button></div>';
     el('consolidated').innerHTML = body;
     // gentle staggered assembly reveal
     var trs = el('consolidated').querySelectorAll('.spec-table tbody tr');
@@ -785,28 +740,31 @@
      (docs/AI-FUTURE-STATE.md). Illustrative, low-risk COU, human-in-the-loop —
      AI supports, FDA decides. The thesis lands: structured content is what makes
      trustworthy AI assistance possible. */
+  var AI_FLOW = [
+    { who: 'AI',    title: 'Read',      desc: 'Parse the PQI Bundle; spot the EC change (range → range)' },
+    { who: 'AI',    title: 'Check',     desc: 'Machine-test the batch vs the coded acceptance criteria' },
+    { who: 'AI',    title: 'Draft',     desc: 'Compose the assessment note + risk flag' },
+    { who: 'AI',    title: 'Recommend', desc: 'Hand to the assessor with a recommendation' },
+    { who: 'Human', title: 'Decide',    desc: 'Assessor approves / asks / rejects' }
+  ];
   function renderFuture() {
+    var steps = AI_FLOW.map(function (s, i) {
+      var arrow = i ? '<div class="ai-arrow">→</div>' : '';
+      return arrow + '<div class="ai-step ai-' + (s.who === 'Human' ? 'human' : 'bot') + '">' +
+        '<div class="ai-actor">' + esc(s.who) + '</div>' +
+        '<div class="ai-title">' + esc(s.title) + '</div>' +
+        '<div class="ai-desc">' + esc(s.desc) + '</div></div>';
+    }).join('');
     el('future').innerHTML =
       '<div class="future-head">' +
         '<h3>Future state — AI-assisted review</h3>' +
         '<span class="future-badge">illustrative</span>' +
-        '<span class="future-badge">FDA draft guidance · Jan 2025</span>' +
+        '<span class="future-badge">FDA draft AI guidance · Jan 2025</span>' +
       '</div>' +
-      '<p class="future-sub">Because the content is <strong>structured</strong>, review can be AI-assisted within FDA’s own ' +
-        'risk-based credibility assessment framework — a narrow, low-risk <code>Context of Use</code>, human in the loop. ' +
-        'You could not do this credibly over a PDF.</p>' +
-      '<div class="ai-grid">' +
-        '<div class="ai-k">Question of interest</div>' +
-        '<div class="ai-v">Does the tested batch meet the tightened end-of-shelf-life Water Content EC (≤ 1.5% w/w)?</div>' +
-        '<div class="ai-k">Context of use</div>' +
-        '<div class="ai-v">AI <strong>pre-screens</strong> the structured spec, machine-checks the batch against the coded criteria, and <strong>drafts</strong> the assessment note.</div>' +
-        '<div class="ai-k">Model risk</div>' +
-        '<div class="ai-v"><span class="ai-risk-low">LOW</span> — deterministic check, low model influence, bounded single-variation consequence.</div>' +
-        '<div class="ai-k">Decision</div>' +
-        '<div class="ai-v">The <strong>assessor decides</strong>. Every AI step logged to the same <code>Provenance</code> audit (21 CFR Part 11 / ALCOA).</div>' +
-      '</div>' +
-      '<p class="future-foot"><strong>The point:</strong> APIX + PQI delivers the structured substrate that makes trustworthy, ' +
-        'framework-aligned AI assistance possible — AI <strong>supports</strong>, FDA <strong>decides</strong>.</p>';
+      '<div class="ai-flow">' + steps + '</div>' +
+      '<p class="future-foot">A narrow, low-risk <code>Context of Use</code>, human-in-the-loop — AI <strong>supports</strong>, ' +
+        'FDA <strong>decides</strong>; every step logged to <code>Provenance</code>. Possible only because the content is ' +
+        '<strong>structured</strong> — not over a PDF.</p>';
     el('future').hidden = false;
     var tg = el('future-toggle'); if (tg) tg.disabled = true;
     el('future').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -948,6 +906,7 @@
 
   function inspectKey(key) {
     if (key === 'task') renderTaskFocus();
+    else if (key === 'harmonize') renderHarmonizeFocus();
     else if (key === 'wrapper') renderWrapperFocus();
     else if (key === 'conformance') inspectFocus('Conformance check — $validate OperationOutcome (automatic)', store.conformance || { resourceType: 'OperationOutcome', issue: [] });
     else if (key === 'notif') inspectFocus('Subscription notification Bundle', lastNotif);
@@ -1095,9 +1054,9 @@
     renderAudit();
     el('xing').hidden = true; el('xing').className = 'xing';
     el('pane-ind').classList.remove('recv'); el('pane-ha').classList.remove('recv');
-    ['ind-author', 'ind-spec', 'ind-pkg', 'ind-rsi', 'ind-track', 'ha-content', 'ha-review', 'summary', 'future'].forEach(hide);
+    ['ind-spec', 'ind-pkg', 'ind-rsi', 'ind-track', 'ha-content', 'ha-review', 'summary', 'future'].forEach(hide);
     show('ha-empty');
-    ['ind-flow', 'ha-flow', 'harmonize', 'src-legend', 'bundle-tree', 'consolidated', 'pkg', 'rsi-conv', 'feed', 'reg-docs', 'reg-status', 'reg-outputs', 'review-result', 'io-list', 'future'].forEach(function (id) { el(id).innerHTML = ''; });
+    ['ind-flow', 'ha-flow', 'consolidated', 'pkg', 'rsi-conv', 'feed', 'reg-docs', 'reg-status', 'reg-outputs', 'review-result', 'io-list', 'future'].forEach(function (id) { el(id).innerHTML = ''; });
     setIoCount(); closeInspect();
     setBatch('good');
     refreshControls();

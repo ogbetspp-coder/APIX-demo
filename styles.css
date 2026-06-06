@@ -547,23 +547,9 @@ table.grid, .val-table, .ectd-table { border-collapse: collapse; }
 .env-arrow { color: var(--ink-soft); font-size: 11px; }
 .apix-env .link-btn { margin-left: auto; }
 
-/* ---------- construction pipeline: stage captions + connector + PQI Bundle tree ---------- */
-.stage-cap { font-size: 12px; color: var(--ink-soft); line-height: 1.5; margin: 0 0 10px; }
-.stage-cap code { color: var(--navy); font-size: 11px; }
-.conn-arrow { font-size: 11.5px; font-weight: 700; color: var(--navy); text-align: center; margin: 12px 0 0; }
-.bundle-tree { margin-bottom: 14px; }
-.bt-cap { font-size: 12px; color: var(--ink-soft); line-height: 1.5; margin-bottom: 8px; }
-.bt-cap code { color: var(--navy); }
-.bt, .bt ul { list-style: none; margin: 0; padding-left: 18px; }
-.bt { padding-left: 0; }
-.bt li { font-size: 12.5px; color: var(--ink); line-height: 1.9; }
-.bt-tag { font-family: Consolas, monospace; font-size: 11px; font-weight: 700; color: var(--navy);
-  background: var(--box-bg); border: 1px solid var(--box-border); border-radius: 3px; padding: 0 5px; margin-right: 5px; }
-.bt-grp { font-weight: 700; color: var(--ink); }
-.bt-grp-chg { color: var(--amber); }
-.bt-chg { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; color: var(--amber);
-  background: var(--amber-bg); border: 1px solid #e6d49a; border-radius: 999px; padding: 0 7px; margin-left: 6px; }
-.bt code { font-size: 11px; color: var(--ink-soft); }
+/* ---------- ConceptMap line under the spec (mapping detail lives in Inspect) ---------- */
+.cmap-line { font-size: 12px; color: var(--ink-soft); margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); }
+.cmap-line code { color: var(--navy); font-size: 11px; }
 
 /* ---------- superiority contrast (Today → With APIX + PQI), in the end Summary ---------- */
 .sum-contrast { margin-top: 18px; }
@@ -586,16 +572,19 @@ table.grid, .val-table, .ectd-table { border-collapse: collapse; }
 .future-head h3 { font-size: 14px; color: var(--navy); }
 .future-badge { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--amber);
   background: var(--amber-bg); border: 1px solid #e6d49a; border-radius: 999px; padding: 1px 8px; }
-.future-sub { font-size: 12px; color: var(--ink-soft); margin: 0 0 12px; line-height: 1.5; }
-.future-sub code { color: var(--navy); }
-.ai-grid { display: grid; grid-template-columns: 168px 1fr; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
-.ai-k { font-size: 11.5px; font-weight: 700; color: var(--ink-soft); background: var(--bg-alt);
-  padding: 8px 11px; border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); }
-.ai-v { font-size: 12.5px; color: var(--ink); padding: 8px 11px; border-bottom: 1px solid var(--line); line-height: 1.5; }
-.ai-grid > :nth-last-child(-n+2) { border-bottom: none; }
-.ai-v code { font-size: 11px; color: var(--ink-soft); }
-.ai-risk-low { color: var(--green); font-weight: 700; }
+/* AI-assisted-review workflow stepper (show the workflow, don't tabulate it) */
+.ai-flow { display: flex; align-items: stretch; gap: 4px; flex-wrap: wrap; margin: 6px 0 2px; }
+.ai-step { flex: 1; min-width: 116px; border: 1px solid var(--line); border-top: 3px solid var(--link);
+  border-radius: var(--radius); padding: 8px 11px; background: var(--bg); }
+.ai-step.ai-human { border-top-color: var(--navy); background: var(--box-bg); }
+.ai-actor { font-family: Consolas, monospace; font-size: 9.5px; font-weight: 700; letter-spacing: .4px;
+  text-transform: uppercase; color: var(--link); }
+.ai-human .ai-actor { color: var(--navy); }
+.ai-title { font-size: 13px; font-weight: 700; color: var(--ink); margin: 2px 0 3px; }
+.ai-desc { font-size: 11px; color: var(--ink-soft); line-height: 1.45; }
+.ai-arrow { display: flex; align-items: center; color: var(--ink-soft); font-weight: 700; }
 .future-foot { font-size: 12.5px; color: var(--ink); margin: 12px 0 0; line-height: 1.55; }
+.future-foot code { color: var(--navy); font-size: 11px; }
 .future-foot strong { color: var(--navy); }
 
 @media (max-width: 1000px) {
@@ -604,6 +593,6 @@ table.grid, .val-table, .ectd-table { border-collapse: collapse; }
   .inspect { width: 100vw; }
   .ct-row { grid-template-columns: 1fr 70px; } .ct-bar { display: none; }
   .anchor { grid-template-columns: 1fr; }
-  .ai-grid { grid-template-columns: 1fr; }
-  .ai-k { border-right: none; }
+  .ai-flow { flex-direction: column; }
+  .ai-arrow { transform: rotate(90deg); }
 }
