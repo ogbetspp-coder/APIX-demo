@@ -1,13 +1,18 @@
 /*
- * UI controller — a guided 3-beat story for a lay audience (and FDA technical
+ * UI controller — a guided 5-beat story for a lay audience (and FDA technical
  * viewers). One idea per screen:
  *
  *   1 · The change       SynthPharma tightens a quality limit. A Document↔Data
  *                         toggle makes the structured-data idea obvious.
- *   2 · Send & check      The real APIX submit chain runs; FDA's system reads the
- *                         data and machine-checks a real batch (data vs data).
- *   3 · Decision + AI      FDA decides; an AI assessment streams, generated live
- *                         from the real batch values.
+ *   2 · Send via APIX     The real APIX submit chain runs as live data, with a
+ *                         "what APIX does" mechanism story + before/after table.
+ *   3 · Auto-check        FDA's system reads the data and machine-checks a real
+ *                         batch against every acceptance criterion (data vs data).
+ *   4 · Q&A on APIX       The two-way conversation — FDA's questions and the
+ *                         sponsor's response on the same live channel — given the
+ *                         same mechanism treatment as Beat 2.
+ *   5 · Decision          FDA decides on the evidence (basis read live from the
+ *                         engine); an AI assessment streams as decision support.
  *
  * Plain English on the surface. The FHIR R5 engine (APIX.store / client / pqi /
  * terminology) is UNCHANGED — this file only renders it and drives the flow:
@@ -28,9 +33,10 @@
     { key: 1, label: 'The change' },
     { key: 2, label: 'Send via APIX' },
     { key: 3, label: 'Auto-check' },
-    { key: 4, label: 'Decision' }
+    { key: 4, label: 'Q&A on APIX' },
+    { key: 5, label: 'Decision' }
   ];
-  var beat = 1;                 // 1 | 2 | 3 | 4
+  var beat = 1;                 // 1 | 2 | 3 | 4 | 5
   var doneBeat = {};            // beat number -> true when completed
   var inFlight = false;         // a handler is awaiting (guards double-clicks)
 
@@ -84,6 +90,7 @@
     if (beat === 2) return renderBeat2();
     if (beat === 3) return renderBeat3();
     if (beat === 4) return renderBeat4();
+    if (beat === 5) return renderBeat5();
   }
 
   /* ----------------------- BEAT 1 — The change ------------------------- */
@@ -223,8 +230,8 @@
       ? '<button class="btn-ghost" data-act="switch">' +
           (isBad ? '← Back to the conforming batch' : 'Now screen an out-of-spec batch →') + '</button>'
       : '';
-    var nextBtn = '<button class="btn-primary" data-act="to-decision"' +
-      (checkDone ? '' : ' disabled') + '>FDA decides →</button>';
+    var nextBtn = '<button class="btn-primary" data-act="to-qa"' +
+      (checkDone ? '' : ' disabled') + '>On to FDA’s review →</button>';
 
     el('beat').innerHTML =
       '<div class="actor">FDA · automated screening</div>' +
@@ -245,25 +252,70 @@
       '<div class="b-controls">' + switchBtn + nextBtn + '</div>';
   }
 
-  /* ----------------------- BEAT 4 — Decision + AI ---------------------- */
-  function renderBeat4() {
-    var convo = infoAsked ? rsiHtml() : '';
-    var payoff = decided ? payoffHtml() : '';
-    var decisionBlock = decided ? '' :
-      '<div class="decision-row">' +
-        '<button class="btn-primary" data-decision="approve">Approve</button>' +
-        '<button class="btn-ghost" data-decision="info"' + (infoAsked ? ' disabled' : '') + '>Send Information Request</button>' +
-        '<button class="btn-ghost" data-decision="reject">Issue Complete Response</button>' +
-      '</div>' +
-      '<div class="rsi">' + convo + '</div>';
+  /* ----------------------- BEAT 4 — Q&A on APIX ------------------------ */
+  /* The two-way conversation gets the SAME mechanism treatment as Beat 2:
+     an exchange viz, a "what APIX does" step list, a before/after table — then
+     the live conversation as the demonstration. Real-time bidirectional exchange
+     is a headline APIX promise, so it earns its own beat. */
 
-    el('beat').innerHTML =
-      '<div class="actor">FDA</div>' +
-      '<h2 class="b-head">FDA decides.</h2>' +
-      decisionBlock + payoff +
-      aiPanelHtml();
+  /* Bidirectional exchange viz: two nodes, a wire, and two delivery ticks. The
+     second tick lights only once the sponsor has responded. */
+  function qaExchangeShell(answered) {
+    return '<div class="exchange">' +
+      '<div class="ex-node">FDA</div>' +
+      '<div class="ex-wire ex-wire-on"><span class="ex-token"></span></div>' +
+      '<div class="ex-node">SynthPharma</div>' +
+      '</div>' +
+      '<div class="ex-ticks">' +
+        '<div class="ex-tick on"><span class="ex-c">✓</span> List of Questions <small>· delivered to SynthPharma in real time</small></div>' +
+        '<div class="ex-tick' + (answered ? ' on' : '') + '"><span class="ex-c">✓</span> Response <small>· delivered to FDA in real time</small></div>' +
+      '</div>';
   }
-  /* Beat 4 dispatch alias kept distinct from the auto-check (Beat 3). */
+
+  /* What APIX does for the conversation, and why it's a step-change — mirrors
+     apixStoryHtml()'s structure exactly. */
+  function qaStoryHtml() {
+    var steps = [
+      ['Carries the List of Questions as structured data', 'the regulator’s questions ride the same case, not a PDF letter in the post.'],
+      ['Stops the review clock automatically', 'the regulatory timer is part of the record, not a reviewer’s spreadsheet.'],
+      ['Pushes the questions to the sponsor in real time', 'no mailroom, no portal login, no waiting to find out a question was even asked.'],
+      ['Brings the answer back on the same channel', 'the clock restarts the instant FDA receives it, and every turn is tracked and attributed.']
+    ];
+    var li = steps.map(function (s, i) {
+      return '<li style="animation-delay:' + (i * 90) + 'ms"><span class="ax-n">' + (i + 1) + '</span>' +
+        '<div><b>' + esc(s[0]) + '</b><span>' + esc(s[1]) + '</span></div></li>';
+    }).join('');
+
+    var rows = [
+      ['Format', 'A letter / PDF attachment', 'A structured message'],
+      ['Channel', 'Email and portal threads', 'One live channel'],
+      ['Review clock', 'Reconciled by hand', 'Stopped &amp; restarted automatically'],
+      ['Each round', 'Days to weeks', 'Real time']
+    ];
+    var ba = rows.map(function (r) {
+      return '<tr><th>' + r[0] + '</th><td class="ba-old">' + r[1] + '</td><td class="ba-new">' + r[2] + '</td></tr>';
+    }).join('');
+
+    return '<ol class="apix-steps">' + li + '</ol>' +
+      '<div class="apix-why">' +
+        '<div class="apix-why-cap">Why it’s a game-changer</div>' +
+        '<table class="ba"><thead><tr><th></th><th>The old way</th><th>With APIX</th></tr></thead>' +
+        '<tbody>' + ba + '</tbody></table></div>';
+  }
+
+  function renderBeat4() {
+    var answered = !!doneBeat.answered;
+    el('beat').innerHTML =
+      '<div class="actor">FDA · review</div>' +
+      '<h2 class="b-head">FDA has a question — and asks it on APIX, not by letter.</h2>' +
+      qaExchangeShell(answered) +
+      '<div class="apix-why-cap">What APIX does for the conversation</div>' +
+      qaStoryHtml() +
+      '<div class="rsi">' + rsiHtml() + '</div>' +
+      '<div class="b-controls">' +
+        '<button class="btn-primary" data-act="to-decision"' + (answered ? '' : ' disabled') + '>FDA decides →</button>' +
+      '</div>';
+  }
 
   /* The two-way Information Request — a key APIX promise: the regulator's List of
      Questions and the sponsor's response ride the SAME live channel as the
@@ -314,13 +366,62 @@
 
   function payoffHtml() {
     var msg = decided === 'approve'
-      ? 'Approved in ' + esc(elapsedStr()) + ' — every step recorded and audited.'
-      : 'Complete Response — not approved (in ' + esc(elapsedStr()) + '). Every step recorded and audited.';
+      ? 'Approved in ' + esc(elapsedStr()) + '. One routine supplement — authored as structured content, ' +
+          'then submitted, auto-screened, discussed, and decided on a single live, auditable channel. ' +
+          'Weeks of paperwork, compressed to minutes of data.'
+      : 'Complete Response issued in ' + esc(elapsedStr()) + '. Authored, submitted, auto-screened, ' +
+          'discussed and decided on one live, auditable channel — every step recorded.';
     return '<div class="payoff"><p class="payoff-head">' + msg +
       ' <button class="link-btn" data-inspect="audit">audit trail { }</button></p></div>';
   }
 
-  /* The AI panel — always available in Beat 3. Output streams from real data. */
+  /* ----------------------- BEAT 5 — Decision -------------------------- */
+  /* The decision is grounded in the prior beats — read live from the engine —
+     so it never reads as a canned wizard. A decision-basis panel summarises the
+     automated screening and (if it happened) the sponsor's response; the AI panel
+     sits below as decision support; the two outcomes are equal-weight choices. */
+  function decisionBasisHtml() {
+    var w = waterCheck();
+    var screening = w.pass
+      ? esc(batchLabel()) + ' — all limits met'
+      : esc(batchLabel()) + ' — Water Content ' + esc(w.measured) + ' exceeded the ' +
+          esc(w.criterion.replace(/\s*w\/w$/, '')) + ' limit';
+
+    var items = '<div class="db-row"><div class="db-k">Automated screening</div>' +
+      '<div class="db-v">' + screening + '</div></div>';
+    if (doneBeat.answered) {
+      items += '<div class="db-row"><div class="db-k">Sponsor’s response</div>' +
+        '<div class="db-v">Justified by 36-month stability data; method validated; ' +
+          'no shelf-life impact — review clock restarted.</div></div>';
+    }
+    return '<div class="decision-basis">' +
+      '<div class="db-cap">What FDA is deciding on</div>' + items + '</div>';
+  }
+
+  function decisionCardsHtml() {
+    return '<div class="dec-cards">' +
+      '<button class="dec-card dec-approve" data-decision="approve">' +
+        '<span class="dec-title">Approve</span>' +
+        '<span class="dec-conseq">The supplement is approved; the tightened Water Content limit takes effect.</span>' +
+      '</button>' +
+      '<button class="dec-card dec-reject" data-decision="reject">' +
+        '<span class="dec-title">Issue Complete Response</span>' +
+        '<span class="dec-conseq">Not approved — FDA issues a Complete Response Letter citing the deficiency.</span>' +
+      '</button>' +
+    '</div>';
+  }
+
+  function renderBeat5() {
+    var actions = decided ? payoffHtml() : decisionCardsHtml();
+    el('beat').innerHTML =
+      '<div class="actor">FDA</div>' +
+      '<h2 class="b-head">FDA decides — on the evidence.</h2>' +
+      decisionBasisHtml() +
+      aiPanelHtml() +
+      actions;
+  }
+
+  /* The AI panel — decision support in Beat 5. Output streams from real data. */
   function aiPanelHtml() {
     return '<div class="ai-panel">' +
       '<div class="ai-head"><h3>AI-assisted review</h3>' +
@@ -358,6 +459,7 @@
     if (actKey === 'send')        return doSend();
     if (actKey === 'to-check')    return doToCheck();
     if (actKey === 'switch')      return doSwitchBatch();
+    if (actKey === 'to-qa')       return doToQa();
     if (actKey === 'to-decision') return doToDecision();
     if (actKey === 'answer')      return doAnswer();
     if (actKey === 'ai')          return runAi();
@@ -460,33 +562,48 @@
     await runEval();
   }
 
-  function doToDecision() {
+  /* --- Beat 3 → 4: enter the Q&A beat; FDA posts the List of Questions. --- */
+  async function doToQa() {
     doneBeat[3] = true;
     beat = 4;
+    inFlight = true;
+    renderCrumb();
+    renderBeat4();                      // show the mechanism while the post lands
+    if (!infoAsked) {
+      try {
+        await store.updateTask({ type: 'updateTask', status: 'on-hold', businessStatus: 'clock-stop', taskCode: 'information-request' });
+        infoAsked = true;
+      } catch (e) { /* surface stays usable */ }
+    }
+    inFlight = false;
+    renderBeat4();
+  }
+
+  /* --- Beat 4 → 5: advance to the decision. --- */
+  function doToDecision() {
+    if (inFlight) return;
+    doneBeat[4] = true;
+    beat = 5;
     render();
   }
 
-  /* --- Beat 4: FDA decision. --- */
+  /* --- Beat 5: FDA decision (Approve / Issue Complete Response). --- */
   async function onDecision(kind) {
-    if (inFlight || beat !== 4 || decided) return;
-    if (kind === 'info' && infoAsked) return;
+    if (inFlight || beat !== 5 || decided) return;
     inFlight = true;
     try {
       if (kind === 'approve') {
         await store.updateTask({ type: 'updateTask', status: 'completed', businessStatus: 'approved', taskCode: 'approval', addOutputs: ['approval', 'assessment'] });
         decided = 'approve';
-        doneBeat[4] = true;
+        doneBeat[5] = true;
       } else if (kind === 'reject') {
         await store.updateTask({ type: 'updateTask', status: 'completed', businessStatus: 'rejected', taskCode: 'rejection', addOutputs: ['rejection'], statusReason: 'Complete Response: the tested batch did not meet the proposed limit.' });
         decided = 'reject';
-        doneBeat[4] = true;
-      } else if (kind === 'info') {
-        await store.updateTask({ type: 'updateTask', status: 'on-hold', businessStatus: 'clock-stop', taskCode: 'information-request' });
-        infoAsked = true;
+        doneBeat[5] = true;
       }
     } catch (e) { /* surface stays usable */ }
     inFlight = false;
-    renderBeat4();
+    renderBeat5();
   }
 
   async function doAnswer() {
