@@ -1,145 +1,57 @@
 /*
- * UI controller — a guided 5-beat story for a lay audience (and FDA technical
- * viewers). One idea per screen:
+ * UI controller — the APIX Exchange Console.
  *
- *   1 · The change       SynthPharma tightens a quality limit. A Document↔Data
- *                         toggle makes the structured-data idea obvious.
- *   2 · Send via APIX     The real APIX submit chain runs as live data, with a
- *                         "what APIX does" mechanism story + before/after table.
- *   3 · Auto-check        FDA's system reads the data and machine-checks a real
- *                         batch against every acceptance criterion (data vs data).
- *   4 · Q&A on APIX       The two-way conversation — FDA's questions and the
- *                         sponsor's response on the same live channel — given the
- *                         same mechanism treatment as Beat 2.
- *   5 · Decision          FDA decides on the evidence (basis read live from the
- *                         engine); an AI assessment streams as decision support.
+ * This is operational software, not slideware: a three-column console
+ * (Applicant | live Exchange | Authority) over a Task state machine, with a
+ * full-width state bar (live Task resource + Provenance audit). No story
+ * stepper, no centered hero beats — every operation is a REAL engine call and
+ * the centerpiece is the live FHIR request/response stream.
  *
- * Plain English on the surface. The FHIR R5 engine (APIX.store / client / pqi /
- * terminology) is UNCHANGED — this file only renders it and drives the flow:
+ * The FHIR R5 engine (APIX.store / client / pqi / terminology) is UNCHANGED —
+ * this file only renders it and drives the workflow:
  *   store.connect() / submit() / subscribe() / updateTask(effect)   (all async)
  *   store.bus 'task' | 'notification' | 'provenance'                 (events)
- *   APIX.client.bus 'io'                                             (API-call list)
+ *   APIX.client.bus 'io'  { request, response }                      (the wire)
  *
- * The Inspect slide-over is the ONLY place raw FHIR / JSON lives. All Inspect
- * renderers, the About panel, the backend toggle, and the audit/IO rendering are
- * preserved from the prior controller; only the surface state machine, the three
- * beats, their handlers, and reset are rewritten.
+ * The Exchange timeline (CENTER column) is fed directly by the real 'io' stream,
+ * interleaved with notification/status markers; each row carries a plain-English
+ * annotation so a non-developer can follow what each operation does. The exact
+ * updateTask effect payloads, the BIZ_GLOSS plain-language status map, the
+ * Provenance/audit rendering, the JSON rendering via APIX.highlight, the backend
+ * toggle, and the About/maturity content are all preserved from the prior
+ * controller.
  */
 (function () {
   var store = APIX.store;
 
   /* ============================ STATE ==================================== */
-  var BEATS = [
-    { key: 1, label: 'The change' },
-    { key: 2, label: 'Send via APIX' },
-    { key: 3, label: 'Auto-check' },
-    { key: 4, label: 'Q&A on APIX' },
-    { key: 5, label: 'Decision' }
-  ];
-  var beat = 1;                 // 1 | 2 | 3 | 4 | 5
-  var doneBeat = {};            // beat number -> true when completed
-  var inFlight = false;         // a handler is awaiting (guards double-clicks)
+  // The case state — drives which actions each party may take.
+  // idle → submitted → received → validation-successful → under-assessment
+  //      → clock-stop → clock-restart → approved | rejected
+  var state = 'idle';
+  var inFlight = false;        // a handler is awaiting (guards double-clicks)
+  var batchKey = 'good';       // 'good' | 'bad' — the screened batch
+  var batchScreened = false;   // the conformance screen has been run at least once
+  var specOpen = false;        // FDA "Open specification" toggled
+  var infoAsked = false;       // an Information Request round was opened
+  var answered = false;        // the applicant responded to the Information Request
+  var decided = null;          // 'approve' | 'reject'
+  var worklistOpen = false;    // the FDA worklist row is expanded
 
-  var changeView = 'document';  // 'document' | 'data' (Beat 1 toggle)
-  var sent = false;             // the submit chain has completed (Beat 2)
-  var batchKey = 'good';        // 'good' | 'bad' — the screened batch
-  var batchChecked = false;     // the auto-check has completed at least once
-  var checkDone = false;        // the current evaluation has finished (verdict shown)
-  var infoAsked = false;        // an Information Request round was opened
-  var decided = null;           // 'approve' | 'reject'
-  var aiRun = false;            // the AI assessment has been streamed
-
-  var reached = {};             // status code -> Date (for elapsed)
-  var lastNotif = null;         // most recent notification (Inspect focus)
-  var ioEntries = [];           // captured { request, response } interactions
-  var auditEntries = [];        // audit records (Inspect only)
+  var reached = {};            // status code -> Date (for elapsed)
+  var lastNotif = null;        // most recent notification bundle
+  var inbox = [];              // applicant inbox messages (from notifications)
+  var ioEntries = [];          // captured { request, response } interactions
+  var auditEntries = [];       // FHIR Provenance audit records
 
   function el(id) { return document.getElementById(id); }
   function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
   function now() { return new Date(); }
-  function delay(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
-  function reduced() { return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches; }
+  function ts(d) { d = d || now(); return d.toTimeString().slice(0, 8); }
 
-  /* The proposed limit as a short readable "≤ 1.5%" (derived, never hard-coded):
-     read the Water Content check row's criterion off the engine. */
-  function proposedLimit() {
-    var w = APIX.pqi.validate(batchKey).filter(function (r) { return /Water/.test(r.test); })[0];
-    return w ? w.criterion.replace(/\s*w\/w$/, '') : '≤ 1.5%';   // "≤ 1.5%"
-  }
+  function batchLabel() { return (APIX.pqi.batches[batchKey] || {}).label || batchKey; }
   function waterCheck() {
     return APIX.pqi.validate(batchKey).filter(function (r) { return /Water/.test(r.test); })[0];
-  }
-  function batchLabel() { return (APIX.pqi.batches[batchKey] || {}).label || batchKey; }
-
-  /* ====================== BREADCRUMB ==================================== */
-  function renderCrumb() {
-    el('crumb').innerHTML = BEATS.map(function (b) {
-      var state = doneBeat[b.key] ? 'done' : (beat === b.key ? 'now' : 'future');
-      var mark = state === 'done' ? '<span class="cr-mark">✓</span>' : '';
-      return '<span class="cr-step cr-' + state + '">' +
-        '<span class="cr-n">' + b.key + '</span>' +
-        '<span class="cr-l">' + esc(b.label) + '</span>' + mark + '</span>';
-    }).join('<span class="cr-sep"></span>');
-  }
-
-  /* ============================ RENDER ================================== */
-  function render() {
-    renderCrumb();
-    if (inFlight && beat === 2 && !sent) return;   // exchange animation owns the stage
-    if (beat === 1) return renderBeat1();
-    if (beat === 2) return renderBeat2();
-    if (beat === 3) return renderBeat3();
-    if (beat === 4) return renderBeat4();
-    if (beat === 5) return renderBeat5();
-  }
-
-  /* ----------------------- BEAT 1 — The change ------------------------- */
-  function renderBeat1() {
-    var c = APIX.pqi.CHANGE;
-    var after = c.after.replace(/^NMT\s*/, '').replace(/\s*w\/w$/, '');   // "1.5%"
-    var before = c.before.replace(/^NMT\s*/, '').replace(/\s*w\/w$/, ''); // "2.0%"
-
-    var docBody = '<p class="chg-sentence">Water content, measured at the end of the tablet’s shelf life, ' +
-      'must now be no more than <span class="chg-new">' + esc(after) + '</span> — tightened from ' +
-      '<span class="chg-old">' + esc(before) + '</span>.</p>';
-
-    var dataBody = '<dl class="chg-record">' +
-      '<div><dt>Test</dt><dd>Water content</dd></div>' +
-      '<div><dt>Limit</dt><dd><strong>≤ ' + esc(after) + '</strong> <span class="chg-was">(was ≤ ' + esc(before) + ')</span></dd></div>' +
-      '<div><dt>When</dt><dd>End of shelf life</dd></div>' +
-      '<div><dt>Method</dt><dd>Karl Fischer (USP &lt;921&gt;)</dd></div>' +
-      '</dl>';
-
-    el('beat').innerHTML =
-      '<div class="actor">SynthPharma · sponsor</div>' +
-      '<h2 class="b-head">Tightening a quality limit on Velexa tablets.</h2>' +
-      '<p class="b-lead">Today a change like this travels as a PDF inside an eCTD submission — ' +
-        're-keyed by hand, weeks in a queue, status chased by email. Here it is as data.</p>' +
-      '<div class="toggle" role="group" aria-label="View">' +
-        '<button class="tg-opt' + (changeView === 'document' ? ' on' : '') + '" data-view="document">Document</button>' +
-        '<button class="tg-opt' + (changeView === 'data' ? ' on' : '') + '" data-view="data">Data</button>' +
-      '</div>' +
-      '<div class="chg-panel">' + (changeView === 'document' ? docBody : dataBody) + '</div>' +
-      '<p class="chg-caption">The same fact — a person can read it, and so can a computer. ' +
-        '<button class="link-btn" data-inspect="fhir">{ } View as FHIR</button></p>' +
-      '<p class="b-why">Backed by 36-month stability data. A change FDA must review.</p>' +
-      '<div class="b-controls">' +
-        '<button class="btn-primary" data-act="send">Send to FDA →</button>' +
-      '</div>';
-  }
-
-  /* ----------------------- BEAT 2 — Send & check ----------------------- */
-  /* The exchange animation: SynthPharma —▸ token —▸ FDA, two ticks in sequence. */
-  function exchangeShell(arrived, checked) {
-    return '<div class="exchange">' +
-      '<div class="ex-node">SynthPharma</div>' +
-      '<div class="ex-wire' + (sent ? ' ex-wire-on' : '') + '"><span class="ex-token"></span></div>' +
-      '<div class="ex-node">FDA</div>' +
-      '</div>' +
-      '<div class="ex-ticks">' +
-        '<div class="ex-tick' + (arrived ? ' on' : '') + '"><span class="ex-c">✓</span> Received</div>' +
-        '<div class="ex-tick' + (checked ? ' on' : '') + '"><span class="ex-c">✓</span> Checked automatically <small>(format &amp; completeness)</small></div>' +
-      '</div>';
   }
 
   /* The shared regulatory case number the engine stamps on submit (real). */
@@ -150,510 +62,7 @@
     } catch (e) { return '215123/S-005'; }
   }
 
-  /* SHOW, don't tell: after the send, state the one concrete fact that proves it
-     happened — FDA's system received it and stamped a shared case number — and
-     point to the real request/response. No benefit tables; the live exchange,
-     the real case id and the real server do the talking. */
-  function sendResultHtml() {
-    return '<p class="send-result">FDA’s system received it and stamped the shared case ' +
-        '<code>' + esc(caseNo()) + '</code>. Applicant and FDA now track the same record, updated in real time. ' +
-        '<button class="link-btn" data-inspect="wrapper">see the live API call &amp; payload { }</button></p>' +
-      '<p class="server-note">' + (isLive()
-        ? 'That was a <strong>real</strong> HTTP call to <code>hapi.fhir.org/baseR5</code> — a public FHIR R5 server, not a mock. Watch the request &amp; response in Inspect.'
-        : 'Shown on a mock server for pacing — flip to <strong>Live</strong> (top right) to run this exact exchange against a real FHIR R5 server, <code>hapi.fhir.org/baseR5</code>.') +
-      '</p>';
-  }
-
-  function renderBeat2() {
-    el('beat').innerHTML =
-      '<div class="actor">SynthPharma · submitting to FDA</div>' +
-      '<h2 class="b-head">Submitting to FDA over APIX.</h2>' +
-      exchangeShell(sent, sent) +
-      sendResultHtml() +
-      '<div class="b-controls">' +
-        '<button class="btn-primary" data-act="to-check">See FDA’s system read it →</button>' +
-      '</div>';
-  }
-
-  /* ----------------------- BEAT 3 — the automatic check ---------------- */
-  /* The strongest proof of why structured data matters: the moment the batch
-     data lands, FDA's system evaluates the WHOLE finished-product specification
-     against the real acceptance criteria — streaming a verdict per parameter and
-     flagging any drift instantly. Auto-runs on entry; one narrative control. */
-  function evalRowsHtml(key, resolved) {
-    return APIX.pqi.validate(key).map(function (r, i) {
-      var done = resolved === 'all' || i < resolved;
-      var cls = done ? (r.pass ? ' ev-pass' : ' ev-fail') : '';
-      var v = !done ? '<span class="ev-spin"></span>'
-                    : (r.pass ? '<span class="ev-tick">✓</span>' : '<span class="ev-cross">✗</span>');
-      return '<div class="ev-row' + cls + '" id="ev-row-' + i + '">' +
-        '<div class="ev-param">' + esc(r.test) + '</div>' +
-        '<div class="ev-crit">' + esc(r.criterion) + '</div>' +
-        '<div class="ev-meas">' + esc(r.measured) + '</div>' +
-        '<div class="ev-verdict">' + v + '</div></div>';
-    }).join('');
-  }
-
-  function verdictHtml(key) {
-    var rows = APIX.pqi.validate(key);
-    var fail = rows.filter(function (r) { return !r.pass; });
-    if (!fail.length) {
-      return '<div class="ev-banner ev-ok"><strong>Batch conforms.</strong> ' +
-        'All ' + rows.length + ' limits met — cleared for assessment automatically, the instant the data arrived.</div>';
-    }
-    var f = fail[0];
-    return '<div class="ev-banner ev-bad"><strong>Non-conformance flagged.</strong> ' +
-      esc(f.test.replace(/\s*\(.*\)/, '')) + ' measured ' + esc(f.measured) + ', outside the ' +
-      esc(f.criterion.replace(/\s*w\/w$/, '')) + ' limit.' +
-      '<span class="ev-bad-em">Caught the moment the data arrived — not left in a PDF for a reviewer to spot.</span></div>';
-  }
-
-  function renderBeat3() {
-    var isBad = batchKey === 'bad';
-    var switchBtn = checkDone
-      ? '<button class="btn-ghost" data-act="switch">' +
-          (isBad ? '← Back to the conforming batch' : 'Now screen an out-of-spec batch →') + '</button>'
-      : '';
-    var nextBtn = '<button class="btn-primary" data-act="to-qa"' +
-      (checkDone ? '' : ' disabled') + '>On to FDA’s review →</button>';
-
-    el('beat').innerHTML =
-      '<div class="actor">FDA · automated screening</div>' +
-      '<h2 class="b-head">FDA’s system checks the batch against every limit.</h2>' +
-      '<p class="b-why ev-sub">The submitted specification and the batch’s results are both structured data, ' +
-        'so the system compares them itself — no reviewer re-typing values or cross-reading a PDF. ' +
-        '<button class="link-btn" data-inspect="batch">see the acceptance criteria { }</button></p>' +
-      '<div class="ev-panel">' +
-        '<div class="ev-head"><span class="ev-title">Finished-product specification</span>' +
-          '<span class="ev-batch">' + esc(batchLabel()) + '</span>' +
-          '<span class="ev-status" id="ev-status">' + (checkDone ? '' : 'Evaluating…') + '</span></div>' +
-        '<div class="ev-row ev-colhead"><div class="ev-param">Parameter</div>' +
-          '<div class="ev-crit">Acceptance criterion</div><div class="ev-meas">Batch result</div>' +
-          '<div class="ev-verdict"></div></div>' +
-        evalRowsHtml(batchKey, checkDone ? 'all' : 0) +
-      '</div>' +
-      (checkDone ? verdictHtml(batchKey) +
-        '<p class="hitl">The system screens and flags — it doesn’t decide. ' +
-        'A human reviewer still makes the scientific assessment.</p>' : '') +
-      '<div class="b-controls">' + switchBtn + nextBtn + '</div>';
-  }
-
-  /* ----------------------- BEAT 4 — Q&A on APIX ------------------------ */
-  /* The two-way conversation gets the SAME mechanism treatment as Beat 2:
-     an exchange viz, a "what APIX does" step list, a before/after table — then
-     the live conversation as the demonstration. Real-time bidirectional exchange
-     is a headline APIX promise, so it earns its own beat. */
-
-  /* Bidirectional exchange viz: two nodes, a wire, and two delivery ticks. The
-     second tick lights only once the sponsor has responded. */
-  function qaExchangeShell(answered) {
-    return '<div class="exchange">' +
-      '<div class="ex-node">FDA</div>' +
-      '<div class="ex-wire ex-wire-on"><span class="ex-token"></span></div>' +
-      '<div class="ex-node">SynthPharma</div>' +
-      '</div>' +
-      '<div class="ex-ticks">' +
-        '<div class="ex-tick on"><span class="ex-c">✓</span> List of Questions <small>· delivered to SynthPharma in real time</small></div>' +
-        '<div class="ex-tick' + (answered ? ' on' : '') + '"><span class="ex-c">✓</span> Response <small>· delivered to FDA in real time</small></div>' +
-      '</div>';
-  }
-
-  function renderBeat4() {
-    var answered = !!doneBeat.answered;
-    el('beat').innerHTML =
-      '<div class="actor">FDA · review</div>' +
-      '<h2 class="b-head">FDA has a question.</h2>' +
-      '<p class="qa-caption">It travels on the same case as the submission. Watch the review clock: ' +
-        'it stops the moment FDA asks, and restarts the moment SynthPharma answers.</p>' +
-      qaExchangeShell(answered) +
-      '<div class="rsi">' + rsiHtml() + '</div>' +
-      '<div class="b-controls">' +
-        '<button class="btn-primary" data-act="to-decision"' + (answered ? '' : ' disabled') + '>FDA decides →</button>' +
-      '</div>';
-  }
-
-  /* The two-way Information Request — a key APIX promise: the regulator's List of
-     Questions and the sponsor's response ride the SAME live channel as the
-     submission, in real time, with the review clock stopping/restarting and every
-     turn tracked. (Real engine: clock-stop / information-request → clock-restart /
-     response-to-questions, each emitting a notification + audit record.) */
-  function msgHtml(from, to, kind, body) {
-    return '<div class="msg msg-' + (from === 'FDA' ? 'ha' : 'sponsor') + '">' +
-      '<div class="msg-meta"><span class="msg-from">' + esc(from) + '</span>' +
-        '<span class="msg-route">→ ' + esc(to) + ' · via APIX · delivered in real time ✓</span></div>' +
-      '<div class="msg-kind">' + esc(kind) + '</div>' +
-      '<div class="msg-body">' + esc(body) + '</div></div>';
-  }
-
-  function rsiHtml() {
-    var answered = !!doneBeat.answered;
-    var clock = answered
-      ? '<span class="ir-clock ir-run">Review clock · running again</span>'
-      : '<span class="ir-clock ir-stop">Review clock · stopped</span>';
-
-    var head = '<div class="ir-head"><span class="ir-title">Information Request</span>' +
-      '<span class="ir-live">live on APIX</span>' + clock + '</div>' +
-      '<p class="ir-note">Same case <code>' + esc(caseNo()) + '</code>, same channel as the submission — ' +
-        'questions and answers exchanged in real time, every turn tracked and attributed. ' +
-        'No email, no portal, no lost attachments. ' +
-        '<button class="link-btn" data-inspect="audit">see the tracked exchange { }</button></p>';
-
-    var q = msgHtml('FDA', 'SynthPharma', 'List of Questions', APIX.RSI.question);
-    var a = answered
-      ? msgHtml('SynthPharma', 'FDA', 'Response to Information Request', APIX.RSI.answer) +
-        '<p class="ir-foot">Answered on the same channel — the review clock restarted the instant FDA received the response.</p>'
-      : '<div class="b-controls"><button class="btn-ghost" data-act="answer">SynthPharma responds →</button></div>';
-
-    return '<div class="ir">' + head + q + a + '</div>';
-  }
-
-  function fmtElapsed(ms) {
-    if (ms == null) return '—';
-    if (ms < 1000) return ms + ' ms';
-    if (ms < 60000) return (ms / 1000).toFixed(1) + ' s';
-    return (ms / 60000).toFixed(1) + ' min';
-  }
-  function elapsedStr() {
-    var first = reached['submitted'];
-    var last = reached['approved'] || reached['rejected'] || now();
-    return (first) ? fmtElapsed(last - first) : '—';
-  }
-
-  function payoffHtml() {
-    var msg = decided === 'approve'
-      ? 'Approved in ' + esc(elapsedStr()) + '. One routine supplement — authored as structured content, ' +
-          'then submitted, auto-screened, discussed, and decided on a single live, auditable channel. ' +
-          'Weeks of paperwork, compressed to minutes of data.'
-      : 'Complete Response issued in ' + esc(elapsedStr()) + '. Authored, submitted, auto-screened, ' +
-          'discussed and decided on one live, auditable channel — every step recorded.';
-    return '<div class="payoff"><p class="payoff-head">' + msg +
-      ' <button class="link-btn" data-inspect="audit">audit trail { }</button></p></div>';
-  }
-
-  /* ----------------------- BEAT 5 — Decision -------------------------- */
-  /* The decision is grounded in the prior beats — read live from the engine —
-     so it never reads as a canned wizard. A decision-basis panel summarises the
-     automated screening and (if it happened) the sponsor's response; the AI panel
-     sits below as decision support; the two outcomes are equal-weight choices. */
-  function decisionBasisHtml() {
-    var w = waterCheck();
-    var screening = w.pass
-      ? esc(batchLabel()) + ' — all limits met'
-      : esc(batchLabel()) + ' — Water Content ' + esc(w.measured) + ' exceeded the ' +
-          esc(w.criterion.replace(/\s*w\/w$/, '')) + ' limit';
-
-    var items = '<div class="db-row"><div class="db-k">Automated screening</div>' +
-      '<div class="db-v">' + screening + '</div></div>';
-    if (doneBeat.answered) {
-      items += '<div class="db-row"><div class="db-k">Sponsor’s response</div>' +
-        '<div class="db-v">Justified by 36-month stability data; method validated; ' +
-          'no shelf-life impact — review clock restarted.</div></div>';
-    }
-    return '<div class="decision-basis">' +
-      '<div class="db-cap">What FDA is deciding on</div>' + items + '</div>';
-  }
-
-  /* Both outcomes stay live so the room can pick one, see what it triggers, then
-     click the other to compare. The chosen card is marked; the engine fires the
-     real update each time. */
-  function decisionCardsHtml() {
-    function card(kind, cls, title, conseq) {
-      var sel = decided === kind ? ' is-selected' : '';
-      var mark = decided === kind ? '<span class="dec-mark">✓ chosen</span>' : '';
-      return '<button class="dec-card ' + cls + sel + '" data-decision="' + kind + '">' +
-        '<span class="dec-title">' + title + mark + '</span>' +
-        '<span class="dec-conseq">' + conseq + '</span></button>';
-    }
-    return '<div class="dec-cards">' +
-        card('approve', 'dec-approve', 'Approve',
-          'The supplement is approved; the tightened Water Content limit takes effect.') +
-        card('reject', 'dec-reject', 'Issue Complete Response',
-          'Not approved — FDA issues a Complete Response Letter citing the deficiency.') +
-      '</div>' +
-      '<p class="dec-hint">' + (decided
-        ? 'Both outcomes are live — click the other card to see what it triggers instead.'
-        : 'FDA’s two options. Click one to see what it triggers — then switch to compare.') + '</p>';
-  }
-
-  function renderBeat5() {
-    el('beat').innerHTML =
-      '<div class="actor">FDA · decision</div>' +
-      '<h2 class="b-head">FDA decides — on the evidence.</h2>' +
-      decisionBasisHtml() +
-      aiPanelHtml() +
-      decisionCardsHtml() +
-      (decided ? payoffHtml() : '');
-  }
-
-  /* The AI panel — decision support in Beat 5. Output streams from real data. */
-  function aiPanelHtml() {
-    return '<div class="ai-panel">' +
-      '<div class="ai-head"><h3>AI-assisted review</h3>' +
-        '<span class="ai-tag">illustrative · FDA draft AI guidance, Jan 2025</span></div>' +
-      '<div class="b-controls"><button class="btn-ghost" data-act="ai">Run AI assessment</button></div>' +
-      '<pre class="ai-out" id="ai-out" hidden></pre>' +
-      '<p class="ai-foot">The AI reads the data and drafts; the reviewer decides. ' +
-        'A narrow, low-risk use. (FDA draft AI guidance, Jan 2025.)</p>' +
-      '</div>';
-  }
-
-  /* Build the AI assessment text from the real, currently-selected batch values. */
-  function aiText() {
-    var w = waterCheck();
-    var limit = proposedLimit();                 // "≤ 1.5%"
-    var lines = [
-      'Reading the structured submission…',
-      'Proposed limit: water ' + limit + ' at end of shelf life.',
-      'Tested ' + batchLabel() + ': measured ' + w.measured + ' — ' +
-        (w.pass ? 'within the limit.' : 'above the limit.')
-    ];
-    if (w.pass) {
-      lines.push('Assessment: this batch meets the proposed criterion.');
-      lines.push('Recommendation: data support approval; no additional batch data needed on this point.');
-    } else {
-      lines.push('Assessment: this batch does not meet the proposed criterion.');
-      lines.push('Recommendation: do not approve on this batch; request additional batch data.');
-    }
-    return lines.join('\n');
-  }
-
-  /* ============================ HANDLERS =============================== */
-  async function runAct(actKey) {
-    if (inFlight) return;
-    if (actKey === 'send')        return doSend();
-    if (actKey === 'to-check')    return doToCheck();
-    if (actKey === 'switch')      return doSwitchBatch();
-    if (actKey === 'to-qa')       return doToQa();
-    if (actKey === 'to-decision') return doToDecision();
-    if (actKey === 'answer')      return doAnswer();
-    if (actKey === 'ai')          return runAi();
-  }
-
-  function setView(v) { if (inFlight) return; changeView = v; renderBeat1(); }
-
-  /* --- Beat 1 → 2: the REAL submit chain, then the received/checked exchange. */
-  async function doSend() {
-    doneBeat[1] = true;
-    beat = 2;
-    inFlight = true;
-    renderCrumb();
-    el('beat').innerHTML = exchangeShell(false, false) +
-      '<p class="ex-status">Sending…</p>';
-    // kick the token animation on the next frame
-    if (!reduced()) { sent = true; var w = el('beat').querySelector('.ex-wire'); if (w) w.classList.add('ex-wire-on'); }
-
-    try {
-      // Author the structured content (fires the real $translate calls into Inspect),
-      // then run the genuine connect → submit → subscribe chain.
-      APIX.terminology.rows().forEach(function (r, n) {
-        setTimeout(function () { APIX.client.translate(r.source.system, r.source.code); }, 30 * n);
-      });
-      APIX.pqi.normalize();
-
-      await store.connect();
-      await store.submit();
-      if (!reached['submitted']) reached['submitted'] = now();
-
-      await store.subscribe();
-      if (!reduced()) await delay(520);
-
-      // arrival tick
-      await store.updateTask({ type: 'updateTask', status: 'received', businessStatus: 'received', addProcedureNo: true, addOutputs: ['ack'] });
-      sent = true;
-      el('beat').querySelector('.ex-ticks').firstChild.classList.add('on');
-      if (!reduced()) await delay(480);
-
-      // automatic conformance check tick
-      await store.updateTask({ type: 'updateTask', status: 'accepted', businessStatus: 'validation-successful', addOutputs: ['validation'], flexibility: true });
-      var ticks = el('beat').querySelectorAll('.ex-tick');
-      if (ticks[1]) ticks[1].classList.add('on');
-      if (!reduced()) await delay(360);
-
-      sent = true;
-      inFlight = false;
-      renderBeat2();
-    } catch (e) {
-      inFlight = false;
-      el('beat').innerHTML = '<p class="b-why">The submission could not be completed.</p>' +
-        '<div class="b-controls"><button class="btn-ghost" data-act="send">Try again</button></div>';
-    }
-  }
-
-  /* --- Beat 2 → 3: advance the real Task to under-assessment, then evaluate. */
-  async function doToCheck() {
-    doneBeat[2] = true;
-    beat = 3;
-    batchKey = 'good';                 // open on the representative batch
-    inFlight = true;
-    renderCrumb();
-    try {
-      await store.updateTask({ type: 'updateTask', status: 'in-progress', businessStatus: 'under-assessment' });
-    } catch (e) { /* the comparison itself is local */ }
-    await runEval();
-  }
-
-  /* Stream a verdict per parameter against the real acceptance criteria. */
-  async function runEval() {
-    inFlight = true;
-    checkDone = false;
-    renderBeat3();                      // skeleton: spinners + "Evaluating…"
-    var rows = APIX.pqi.validate(batchKey);
-    if (reduced()) {
-      checkDone = true; batchChecked = true; inFlight = false; renderBeat3(); return;
-    }
-    await delay(440);
-    for (var i = 0; i < rows.length; i++) {
-      var row = el('ev-row-' + i);
-      if (row) {
-        row.classList.add(rows[i].pass ? 'ev-pass' : 'ev-fail');
-        var v = row.querySelector('.ev-verdict');
-        if (v) v.innerHTML = rows[i].pass ? '<span class="ev-tick">✓</span>' : '<span class="ev-cross">✗</span>';
-      }
-      var stat = el('ev-status');
-      if (stat) stat.textContent = 'Checking ' + (i + 1) + ' of ' + rows.length + '…';
-      await delay(autoCheckPause(rows[i]));
-    }
-    await delay(340);
-    checkDone = true; batchChecked = true; inFlight = false;
-    renderBeat3();                      // verdict banner + enabled controls
-  }
-  /* Linger a touch longer on a failing row so the room registers the catch. */
-  function autoCheckPause(r) { return r.pass ? 460 : 760; }
-
-  async function doSwitchBatch() {
-    if (inFlight) return;
-    batchKey = (batchKey === 'good') ? 'bad' : 'good';
-    await runEval();
-  }
-
-  /* --- Beat 3 → 4: enter the Q&A beat; FDA posts the List of Questions. --- */
-  async function doToQa() {
-    doneBeat[3] = true;
-    beat = 4;
-    inFlight = true;
-    renderCrumb();
-    renderBeat4();                      // show the mechanism while the post lands
-    if (!infoAsked) {
-      try {
-        await store.updateTask({ type: 'updateTask', status: 'on-hold', businessStatus: 'clock-stop', taskCode: 'information-request' });
-        infoAsked = true;
-      } catch (e) { /* surface stays usable */ }
-    }
-    inFlight = false;
-    renderBeat4();
-  }
-
-  /* --- Beat 4 → 5: advance to the decision. --- */
-  function doToDecision() {
-    if (inFlight) return;
-    doneBeat[4] = true;
-    beat = 5;
-    render();
-  }
-
-  /* --- Beat 5: FDA decision (Approve / Issue Complete Response). --- */
-  async function onDecision(kind) {
-    if (inFlight || beat !== 5 || kind === decided) return;
-    inFlight = true;
-    try {
-      if (kind === 'approve') {
-        await store.updateTask({ type: 'updateTask', status: 'completed', businessStatus: 'approved', taskCode: 'approval', addOutputs: ['approval', 'assessment'] });
-        decided = 'approve';
-        doneBeat[5] = true;
-      } else if (kind === 'reject') {
-        await store.updateTask({ type: 'updateTask', status: 'completed', businessStatus: 'rejected', taskCode: 'rejection', addOutputs: ['rejection'], statusReason: 'Complete Response: the tested batch did not meet the proposed limit.' });
-        decided = 'reject';
-        doneBeat[5] = true;
-      }
-    } catch (e) { /* surface stays usable */ }
-    inFlight = false;
-    renderBeat5();
-  }
-
-  async function doAnswer() {
-    if (inFlight) return;
-    inFlight = true;
-    // Show a live "composing" indicator on the channel before the reply lands.
-    if (!reduced()) {
-      var ir = el('beat').querySelector('.ir');
-      if (ir) {
-        var ctrl = ir.querySelector('.b-controls'); if (ctrl) ctrl.remove();
-        var t = document.createElement('div');
-        t.className = 'msg msg-sponsor msg-typing';
-        t.innerHTML = '<div class="msg-meta"><span class="msg-from">SynthPharma</span>' +
-          '<span class="msg-route">→ FDA · via APIX</span></div>' +
-          '<div class="typing"><span></span><span></span><span></span></div>';
-        ir.appendChild(t);
-      }
-      await delay(1150);
-    }
-    try {
-      await store.updateTask({ type: 'updateTask', status: 'in-progress', businessStatus: 'clock-restart', taskCode: 'response-to-questions' });
-      doneBeat.answered = true;
-    } catch (e) { /* keep going */ }
-    inFlight = false;
-    renderBeat4();
-  }
-
-  /* --- The AI demo: stream the data-derived assessment, word by word. --- */
-  async function runAi() {
-    var out = el('ai-out');
-    if (!out) return;
-    var btn = el('beat').querySelector('[data-act="ai"]');
-    if (btn) btn.disabled = true;
-    aiRun = true;
-    out.hidden = false;
-    var text = aiText();
-    if (reduced()) { out.textContent = text; if (btn) btn.disabled = false; return; }
-    out.textContent = '';
-    var tokens = text.split(/(\s+)/);   // keep whitespace so line breaks survive
-    for (var i = 0; i < tokens.length; i++) {
-      out.textContent += tokens[i];
-      if (tokens[i].trim()) await delay(38);
-    }
-    if (btn) btn.disabled = false;
-  }
-
-  /* ===================================================================== */
-  /* ============================ INSPECT ================================= */
-  /* The ONLY place FHIR / JSON appears. Renderers below keep full R5 fidelity. */
-  function openInspect() { el('inspect').hidden = false; el('inspect-toggle').setAttribute('aria-expanded', 'true'); el('inspect-toggle').classList.add('on'); }
-  function closeInspect() { el('inspect').hidden = true; el('inspect-toggle').setAttribute('aria-expanded', 'false'); el('inspect-toggle').classList.remove('on'); }
-  function toggleInspect() { if (el('inspect').hidden) openInspect(); else closeInspect(); }
-
-  function inspectFocus(title, htmlOrObj, isHtml) {
-    var body = isHtml ? htmlOrObj : '<pre class="modal-json">' + APIX.highlight(htmlOrObj) + '</pre>';
-    el('inspect-focus').innerHTML = '<div class="if-title">' + esc(title) + '</div>' + body;
-  }
-
-  /* Source-origin colors for the ConceptMap mapping table. */
-  var SOURCES = [
-    { key: 'lims', cls: 'org-lims', label: 'LIMS' },
-    { key: 'stab', cls: 'org-stab', label: 'Stability System' },
-    { key: 'meth', cls: 'org-meth', label: 'Method Repository' }
-  ];
-  var TERM_SOURCE = {
-    'DESCR': 'lims', 'ID-HPLC': 'lims', 'POT': 'lims', 'DISSO': 'lims',
-    'DEGR': 'stab', 'KF': 'stab', 'MICRO': 'lims', 'PCT_WW': 'meth', 'PCT_LC': 'meth'
-  };
-  function srcOf(code) { return TERM_SOURCE[code] || 'lims'; }
-  function srcCls(key) { for (var i = 0; i < SOURCES.length; i++) if (SOURCES[i].key === key) return SOURCES[i].cls; return 'org-lims'; }
-
-  function renderHarmonizeFocus() {
-    var body = APIX.terminology.rows().map(function (r) {
-      var skey = srcOf(r.source.code), scls = srcCls(skey);
-      var slabel = (function () { for (var i = 0; i < SOURCES.length; i++) if (SOURCES[i].key === skey) return SOURCES[i].label; return 'LIMS'; })();
-      return '<tr class="map-row in ' + scls + '">' +
-        '<td class="m-local"><span class="m-src-tag"><span class="src-dot ' + scls + '"></span>' + esc(slabel) + '</span>' +
-          '<span class="m-disp">' + esc(r.source.display) + '</span> <code>' + esc(r.source.code) + '</code></td>' +
-        '<td class="m-arrow">→</td>' +
-        '<td><span class="m-disp m-tgt">' + esc(r.target.display) + '</span> <code>' + esc(r.target.code) + '</code></td></tr>';
-    }).join('');
-    el('inspect-focus').innerHTML = '<div class="if-title">ConceptMap · $translate — local code → PQI standard term</div>' +
-      '<table class="grid map-table"><thead><tr><th>Source · local code</th><th class="map-arrow-th"></th><th>PQI standard term</th></tr></thead>' +
-      '<tbody>' + body + '</tbody></table>';
-  }
-
+  /* Plain-language gloss of each businessStatus (the exec-legibility layer). */
   var BIZ_GLOSS = {
     'submitted': 'Submitted — the supplement has been sent to FDA via the gateway and awaits acknowledgement.',
     'received': 'Received — FDA has acknowledged receipt of the supplement.',
@@ -664,161 +73,88 @@
     'approved': 'Approved — FDA approved the supplement; the specification change takes effect.',
     'rejected': 'Not approved — FDA issued a Complete Response Letter (grounds in the letter).'
   };
+  function gloss(code) { return BIZ_GLOSS[code] || ''; }
 
-  function taskDocsList(items, fallbackIc) {
-    if (!items || !items.length) return '<span class="tk-none">none yet</span>';
-    return '<ul class="tk-docs">' + items.map(function (it) {
-      var d = it.valueReference && it.valueReference.reference ? store.get(it.valueReference.reference) : null;
-      var ct = d && d.content ? d.content[0].attachment.contentType : null;
-      var ic = ct === 'application/fhir+json' ? 'FHIR' : (ct === 'application/pdf' ? 'PDF' : (fallbackIc || 'DOC'));
-      var ttype = (it.type && it.type.coding && it.type.coding[0]) ? it.type.coding[0].code : '';
-      return '<li><span class="doc-ic">' + esc(ic) + '</span> ' + esc(it.valueReference.display || '(document)') +
-        (ttype ? ' <code>' + esc(ttype) + '</code>' : '') + '</li>';
-    }).join('') + '</ul>';
-  }
-  function renderTaskFocus() {
+  /* The current case status in plain words (for the applicant panel). */
+  function caseStatusText() {
+    if (state === 'idle') return 'Not yet submitted';
     var t = store.task;
-    if (!t) { inspectFocus('Task', { resourceType: 'Task' }); return; }
-    var bizCode = (t.businessStatus && t.businessStatus.coding && t.businessStatus.coding[0]) ? t.businessStatus.coding[0].code : '';
-    var bizDisp = (t.businessStatus && t.businessStatus.coding && t.businessStatus.coding[0]) ? t.businessStatus.coding[0].display : bizCode;
-    var codeCode = (t.code && t.code.coding && t.code.coding[0]) ? t.code.coding[0].code : '';
-    var codeDisp = codeCode === 'supplement' ? 'Prior Approval Supplement'
-      : ((t.code && t.code.coding && t.code.coding[0]) ? t.code.coding[0].display : '');
-    var procNo = '';
-    (t.identifier || []).forEach(function (id) {
-      if (id.type && id.type.coding && id.type.coding[0] && id.type.coding[0].code === 'apixregulatorprocedureno') procNo = id.value;
-    });
-    var groupId = (t.groupIdentifier && t.groupIdentifier.value) || '';
-    var requester = (t.requester && (t.requester.display || t.requester.reference)) || '—';
-    var performer = (t.owner && (t.owner.display || t.owner.reference)) || '—';
-    var gloss = BIZ_GLOSS[bizCode] || '';
-    var reason = (t.statusReason && t.statusReason.text) || '';
-    var card =
-      '<div class="tk-card">' +
-        '<div class="tk-row tk-head"><span class="tk-k">Submission</span>' +
-          '<span class="tk-v"><strong>' + esc(codeDisp || 'Prior Approval Supplement') + '</strong></span></div>' +
-        '<div class="tk-row"><span class="tk-k">Status</span>' +
-          '<span class="tk-v"><span class="badge badge-status">' + esc(t.status) + '</span>' +
-          ' <span class="badge badge-biz">' + esc(bizDisp) + '</span></span></div>' +
-        (gloss ? '<div class="tk-gloss">' + esc(gloss) + '</div>' : '') +
-        (reason ? '<div class="tk-gloss tk-reason"><strong>Grounds:</strong> ' + esc(reason) + '</div>' : '') +
-        '<div class="tk-row"><span class="tk-k">Supplement number</span><span class="tk-v"><code>' + esc(procNo || 'not yet assigned') + '</code></span></div>' +
-        '<div class="tk-row"><span class="tk-k">Review thread</span><span class="tk-v"><code>' + esc(groupId || '—') + '</code> <small>(group identifier)</small></span></div>' +
-        '<div class="tk-row"><span class="tk-k">Requester</span><span class="tk-v">' + esc(requester) + ' <small>(sponsor)</small></span></div>' +
-        '<div class="tk-row"><span class="tk-k">Performer</span><span class="tk-v">' + esc(performer) + ' <small>(FDA)</small></span></div>' +
-        '<div class="tk-row tk-block"><span class="tk-k">Input documents</span><span class="tk-v">' + taskDocsList(t.input) + '</span></div>' +
-        '<div class="tk-row tk-block"><span class="tk-k">Output documents</span><span class="tk-v">' + taskDocsList(t.output, 'PDF') + '</span></div>' +
-      '</div>' +
-      '<button class="link-btn tk-raw-toggle" id="tk-raw-toggle">Show raw FHIR JSON</button>' +
-      '<pre class="modal-json tk-raw" id="tk-raw" hidden>' + APIX.highlight(t) + '</pre>';
-    el('inspect-focus').innerHTML = '<div class="if-title">Task — Prior Approval Supplement</div>' + card;
+    var biz = (t && t.businessStatus && t.businessStatus.coding && t.businessStatus.coding[0])
+      ? t.businessStatus.coding[0].code : state;
+    return gloss(biz) || biz;
   }
 
-  /* APIX wrapper view — Task ▸ DocumentReference ▸ Binary (base64, real decode)
-     ▸ PQI Bundle. */
-  function renderWrapperFocus() {
-    var t = store.task;
-    var docref = store.get('DocumentReference/docref-spec-fhir');
-    var bin = store.get('Binary/binary-spec-fhir');
-    var bizDisp = (t && t.businessStatus && t.businessStatus.coding && t.businessStatus.coding[0]) ? t.businessStatus.coding[0].display : '—';
-    var codeCode2 = (t && t.code && t.code.coding && t.code.coding[0]) ? t.code.coding[0].code : '';
-    var codeDisp = codeCode2 === 'supplement' ? 'Prior Approval Supplement'
-      : ((t && t.code && t.code.coding && t.code.coding[0]) ? t.code.coding[0].display : 'Prior Approval Supplement');
-    var att = docref && docref.content ? docref.content[0].attachment : {};
-    var b64 = (bin && bin.data) || '';
-    var b64short = b64.length > 88 ? b64.slice(0, 88) + '…' : b64;
-    var html =
-      '<div class="wrap-stack">' +
-        '<div class="wrap-layer wl-task">' +
-          '<div class="wl-head"><span class="wl-tag">Task</span> envelope / orchestrator</div>' +
-          '<div class="wl-meta">' +
-            '<span><code>code</code> ' + esc(codeDisp) + '</span>' +
-            '<span><code>status</code> ' + esc(t ? t.status : '—') + ' · <code>businessStatus</code> ' + esc(bizDisp) + '</span>' +
-            '<span><code>requester</code> SynthPharma AG → <code>owner</code> FDA</span>' +
-          '</div>' +
-          '<div class="wl-arrow">input[].valueReference →</div>' +
-          '<div class="wrap-layer wl-docref">' +
-            '<div class="wl-head"><span class="wl-tag">DocumentReference</span> the library card</div>' +
-            '<div class="wl-meta">' +
-              '<span><code>type</code> 3.2.P.5.1 · ' + esc((docref && docref.type && docref.type.coding[0].display) || 'Drug Product Specification') + '</span>' +
-              '<span><code>title</code> ' + esc(att.title || '—') + '</span>' +
-              '<span><code>version</code> ' + esc((docref && docref.version) || '—') + ' · <code>contentType</code> ' + esc(att.contentType || '—') + '</span>' +
-            '</div>' +
-            '<div class="wl-arrow">content.attachment.url →</div>' +
-            '<div class="wrap-layer wl-binary">' +
-              '<div class="wl-head"><span class="wl-tag">Binary</span> ' + esc((bin && bin.contentType) || 'application/fhir+json') + ', base64</div>' +
-              '<div class="wl-b64" id="wl-b64"><code>' + esc(b64short) + '</code></div>' +
-              '<button class="link-btn wl-decode" id="wl-decode">Decode base64 →</button>' +
-              '<div class="wrap-layer wl-bundle" id="wl-bundle" hidden>' +
-                '<div class="wl-head"><span class="wl-tag">PQI Bundle</span> PlanDefinition + ObservationDefinitions</div>' +
-                '<pre class="modal-json wl-bundle-json" id="wl-bundle-json"></pre>' +
-              '</div>' +
-            '</div>' +
-          '</div>' +
-        '</div>' +
-      '</div>';
-    el('inspect-focus').innerHTML = '<div class="if-title">Payload / APIX wrapper</div>' +
-      '<p class="wrap-intro">The PQI Bundle is encoded into a <code>Binary</code>, described by a <code>DocumentReference</code>, carried by a <code>Task</code>.</p>' + html;
+  /* =================== EXCHANGE TIMELINE (the star) ===================== */
+  /* Fed by the real APIX.client.bus 'io' stream. Each 'io' detail is a genuine
+   * FHIR HTTP exchange; we render it as a row and annotate it in plain English.
+   * Status/notification markers are interleaved as the workflow advances. */
+
+  // Plain-English annotation for an 'io' interaction, derived from its method,
+  // url and label so the row is legible to a non-developer.
+  function ioAnnotation(e) {
+    var req = e.request || {}, url = req.url || '', label = e.label || '';
+    var m = req.method || '';
+    if (/oauth2\/token/.test(url)) return 'SynthPharma authenticates to the gateway (SMART Backend Services token).';
+    if (/\$validate/.test(url)) return 'Automated conformance check — FHIR $validate on the payload.';
+    if (/\$translate/.test(url)) return 'Local lab code mapped to the PQI standard term (ConceptMap $translate).';
+    if (/^WS$/.test(m)) return 'Real-time push channel (WebSocket) — ' + (req.body ? 'bind' : 'event') + '.';
+    if (/Notification/.test(label)) return 'FDA pushes a real-time status update to SynthPharma.';
+    if (m === 'POST' && /\/Binary/.test(url)) return 'The structured specification is streamed as a Binary.';
+    if (m === 'POST' && /\/DocumentReference/.test(url)) return 'A DocumentReference describes the submitted specification.';
+    if (m === 'POST' && /\/Subscription/.test(url)) return 'SynthPharma subscribes to real-time status updates for this case.';
+    if (m === 'POST' && /\/Organization/.test(url)) return 'The applicant organisation is registered.';
+    if (m === 'POST' && /\/Endpoint/.test(url)) return 'The notification webhook (Endpoint) is registered.';
+    if (m === 'POST' && /\/Provenance/.test(url)) return 'An audit record (Provenance) is written — who, what, when, why.';
+    if (m === 'POST' && /\/Task/.test(url)) return 'SynthPharma submits the supplement as structured data.';
+    if (m === 'PUT' && /\/Task/.test(url)) return taskPutAnnotation(e);
+    if (m === 'GET' && /\/Task/.test(url)) return 'FDA reads back the Task — the shared, live record of this case.';
+    return label || (m + ' ' + url);
   }
 
-  function decodeWrapperBinary() {
-    var bin = store.get('Binary/binary-spec-fhir');
-    var bundleEl = el('wl-bundle'), jsonEl = el('wl-bundle-json'), btn = el('wl-decode');
-    if (!bin || !bin.data || !bundleEl || !jsonEl) return;
-    var decode = (typeof atob === 'function') ? atob : function (s) { return Buffer.from(s, 'base64').toString('binary'); };
-    var json;
-    try { json = JSON.parse(decodeURIComponent(escape(decode(bin.data)))); }
-    catch (e) { try { json = JSON.parse(decode(bin.data)); } catch (e2) { json = { error: 'decode failed' }; } }
-    jsonEl.innerHTML = APIX.highlight(json);
-    bundleEl.hidden = false;
-    if (btn) { btn.textContent = 'Decoded — equals the PQI Bundle'; btn.disabled = true; btn.classList.add('wl-decoded'); }
+  // A Task PUT carries a businessStatus transition; annotate it from the status.
+  function taskPutAnnotation(e) {
+    var body = (e.request && e.request.body) || {};
+    var biz = (body.businessStatus && body.businessStatus.coding && body.businessStatus.coding[0])
+      ? body.businessStatus.coding[0].code : '';
+    var map = {
+      'received': 'FDA acknowledges receipt — the review record is updated.',
+      'validation-successful': 'Automated conformance check passed — the supplement is filed for review.',
+      'under-assessment': 'FDA opens the structured specification for assessment.',
+      'clock-stop': 'Information request issued — the review clock stops.',
+      'clock-restart': 'SynthPharma responds — the review clock restarts.',
+      'approved': 'FDA approves the supplement — the tightened limit takes effect.',
+      'rejected': 'FDA issues a Complete Response Letter — not approved.'
+    };
+    return map[biz] || 'FDA advances the Task state.';
   }
 
-  /* The structured acceptance-criteria check (FHIR detail) for the surface result. */
-  function renderBatchFocus() {
-    var results = APIX.pqi.validate(batchKey);
-    var anyFail = results.some(function (v) { return !v.pass; });
-    var label = (APIX.pqi.batches[batchKey] || {}).label || batchKey;
-    var rows = results.map(function (v) {
-      return '<tr' + (v.pass ? '' : ' class="val-fail-row"') + '><td>' + esc(v.test) + '</td><td>' + esc(v.criterion) +
-        '</td><td>' + esc(v.measured) + '</td><td class="' + (v.pass ? 'pass' : 'fail') + '">' +
-        (v.pass ? 'PASS' : 'FAIL') + '</td></tr>';
-    }).join('');
-    var banner = anyFail
-      ? '<div class="val-banner val-banner-fail">FAILS PROPOSED CRITERION</div>'
-      : '<div class="val-banner val-banner-pass">All criteria met</div>';
-    el('inspect-focus').innerHTML =
-      '<div class="if-title">Acceptance criteria — batch vs. structured ObservationDefinitions</div>' +
-      '<div class="val-sub">' + esc(label) + '</div>' + banner +
-      '<table class="val-table"><thead><tr><th>Test</th><th>Criterion</th><th>Measured</th><th>Result</th></tr></thead>' +
-        '<tbody>' + rows + '</tbody></table>';
+  // The resource type/id touched by an interaction (for the row's mono chip).
+  function ioResourceTag(e) {
+    var url = (e.request && e.request.url) || '';
+    var body = (e.response && e.response.body) || (e.request && e.request.body) || {};
+    var m = url.replace(/^\//, '').split('?')[0];               // e.g. "Task/abc" or "Task/$validate"
+    if (body && body.resourceType && body.id) return body.resourceType + '/' + body.id;
+    if (/\$/.test(m)) return m;
+    return m;
   }
 
-  function inspectKey(key) {
-    if (key === 'task') renderTaskFocus();
-    else if (key === 'harmonize') renderHarmonizeFocus();
-    else if (key === 'wrapper') renderWrapperFocus();
-    else if (key === 'batch') renderBatchFocus();
-    else if (key === 'spec') renderWrapperFocus();
-    else if (key === 'audit') { scrollAudit(); }
-    else if (key === 'conformance') inspectFocus('Conformance check — $validate OperationOutcome (automatic)', store.conformance || { resourceType: 'OperationOutcome', issue: [] });
-    else if (key === 'notif') inspectFocus('Subscription notification Bundle', lastNotif || { resourceType: 'Bundle', type: 'subscription-notification' });
-    else if (key === 'fhir') inspectFocus('PQI FHIR Bundle', APIX.pqi.bundle || APIX.pqi.normalize());
-    else if (key.indexOf('prov:') === 0) {
-      var pr = store.get('Provenance/' + key.slice(5));
-      if (pr) inspectFocus('Provenance — audit record', pr);
-    } else if (key.indexOf('ref:') === 0) {
-      var ref = key.slice(4);
-      if (ref === 'DocumentReference/docref-spec-fhir') renderWrapperFocus();
-      else { var r = store.get(ref); if (r) inspectFocus(r.resourceType + (r.content ? ' — ' + r.content[0].attachment.title : ''), r); }
+  // The direction arrow: who is the actor of this interaction.
+  // Submissions / responses / the applicant's reads flow → to FDA; FDA outputs
+  // and notifications flow ← back to the applicant.
+  function ioDirection(e) {
+    var req = e.request || {}, url = req.url || '', label = e.label || '', m = req.method || '';
+    if (/Notification/.test(label)) return 'in';                 // push to applicant
+    if (m === 'PUT' && /\/Task/.test(url)) {                     // FDA advancing the case
+      var body = req.body || {};
+      var biz = (body.businessStatus && body.businessStatus.coding && body.businessStatus.coding[0])
+        ? body.businessStatus.coding[0].code : '';
+      if (biz === 'clock-restart') return 'out';                // applicant response → FDA
+      return 'in';                                              // FDA acts → applicant sees it
     }
-    openInspect();
-  }
-  function scrollAudit() {
-    setTimeout(function () { var s = el('audit-sec'); if (s && !s.hidden) s.scrollIntoView({ block: 'start' }); }, 30);
+    if (m === 'POST' && /Provenance/.test(url)) return 'in';
+    return 'out';                                                // applicant → FDA (default)
   }
 
-  /* ---- API-call list (APIX.client 'io' events) ---- */
   function ioStatusClass(s) { return (s >= 200 && s < 300) ? 'ok' : (s >= 400 ? 'err' : 'neu'); }
   function ioHeaderRows(h) {
     if (!h) return '';
@@ -835,18 +171,24 @@
     if (b == null) return '<div class="io-empty">(no body)</div>';
     return '<pre class="modal-json io-json">' + APIX.highlight(b) + '</pre>';
   }
-  function renderIoEntry(e) {
+
+  function renderExchangeRow(e) {
     var st = e.response || {}, req = e.request || {};
     var cls = ioStatusClass(st.status);
-    return '<div class="io-entry" data-io="' + e.id + '">' +
-      '<button class="io-sum io-' + cls + '">' +
-        '<span class="io-method">' + esc(req.method || '') + '</span>' +
-        '<span class="io-url">' + esc(req.url || '') + '</span>' +
-        '<span class="io-arrow">→</span>' +
-        '<span class="io-status">' + esc(String(st.status || '')) + ' ' + esc(st.statusText || '') + '</span>' +
-        '<span class="io-label">' + esc(e.label || '') + '</span>' +
+    var dir = ioDirection(e);
+    var arrow = dir === 'in' ? '←' : '→';
+    var to = dir === 'in' ? 'to SynthPharma' : 'to FDA';
+    return '<div class="xrow xrow-' + dir + '" data-io="' + e.id + '">' +
+      '<button class="xrow-sum">' +
+        '<span class="xrow-time">' + esc(ts(e.ts)) + '</span>' +
+        '<span class="xrow-dir" title="' + esc(to) + '">' + arrow + '</span>' +
+        '<span class="xrow-method io-method">' + esc(req.method || '') + '</span>' +
+        '<span class="xrow-path">' + esc(req.url || '') + '</span>' +
+        '<span class="xrow-status io-' + cls + '">' + esc(String(st.status || '')) + '</span>' +
+        '<span class="xrow-res"><code>' + esc(ioResourceTag(e)) + '</code></span>' +
+        '<span class="xrow-note">' + esc(ioAnnotation(e)) + '</span>' +
       '</button>' +
-      '<div class="io-detail" hidden>' +
+      '<div class="xrow-detail" hidden>' +
         '<div class="io-sec">Request</div>' +
         '<div class="io-line"><span class="io-k">' + esc(req.method || '') + '</span> ' + esc(req.url || '') + '</div>' +
         ioHeaderRows(req.headers) + ioBody(req.body) +
@@ -856,13 +198,192 @@
       '</div>' +
     '</div>';
   }
-  function setIoCount() { el('io-count').textContent = ioEntries.length; }
+
   function addIo(detail) {
     ioEntries.push(detail);
-    setIoCount();
+    el('exch-count').textContent = ioEntries.length;
+    var log = el('exch-log');
+    var emp = log.querySelector('.empty');
+    if (emp) emp.remove();
     var wrap = document.createElement('div');
-    wrap.innerHTML = renderIoEntry(detail);
-    el('io-list').appendChild(wrap.firstChild);
+    wrap.innerHTML = renderExchangeRow(detail);
+    var rowEl = wrap.firstChild;
+    log.appendChild(rowEl);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  /* ===================== APPLICANT PANEL (LEFT) ======================== */
+  function renderApplicant() {
+    el('applicant-status').textContent = caseStatusText();
+    el('applicant-status').className = 'cs-value cs-' + (state === 'idle' ? 'idle' : 'active');
+    renderInbox();
+    renderApplicantActions();
+  }
+
+  function renderInbox() {
+    el('inbox-count').textContent = inbox.length;
+    var host = el('inbox');
+    if (!inbox.length) { host.innerHTML = '<div class="empty">No messages from FDA yet.</div>'; return; }
+    host.innerHTML = inbox.map(function (m) {
+      return '<div class="inbox-msg' + (m.alert ? ' inbox-alert' : '') + '">' +
+        '<div class="inbox-meta"><span class="inbox-from">FDA</span>' +
+          '<span class="inbox-time">' + esc(ts(m.time)) + '</span></div>' +
+        '<div class="inbox-subj">' + esc(m.subject) + '</div>' +
+        (m.body ? '<div class="inbox-body">' + esc(m.body) + '</div>' : '') +
+        (m.bundle ? '<button class="link-btn" data-view-notif="1">view notification { }</button>' : '') +
+      '</div>';
+    }).join('');
+  }
+
+  // Only the applicant actions valid in the current state are enabled; the
+  // suggested next action is subtly highlighted.
+  function renderApplicantActions() {
+    var rows = [];
+    var canSubmit = state === 'idle';
+    rows.push(actionBtn('app-submit', 'Submit supplement', canSubmit, canSubmit,
+      'connect → submit → subscribe (real FHIR POST chain)'));
+    var canRespond = state === 'clock-stop' && !answered;
+    rows.push(actionBtn('app-respond', 'Respond to questions', canRespond, canRespond,
+      'PUT Task → clock-restart (response-to-questions)'));
+    el('applicant-actions').innerHTML = rows.join('');
+  }
+
+  /* ===================== AUTHORITY PANEL (RIGHT) ======================= */
+  function renderAuthority() {
+    renderWorklist();
+    renderAuthorityDetail();
+    renderAuthorityActions();
+  }
+
+  function renderWorklist() {
+    var t = store.task;
+    var host = el('worklist');
+    if (!t || state === 'idle') {
+      el('worklist-count').textContent = '0';
+      host.innerHTML = '<div class="empty">No submissions in queue.</div>';
+      el('authority-detail').hidden = true;
+      return;
+    }
+    el('worklist-count').textContent = '1';
+    var biz = (t.businessStatus && t.businessStatus.coding && t.businessStatus.coding[0]) ? t.businessStatus.coding[0] : {};
+    var lu = (t.meta && t.meta.lastUpdated) ? new Date(t.meta.lastUpdated) : now();
+    host.innerHTML =
+      '<button class="wl-row' + (worklistOpen ? ' wl-open' : '') + '" data-wl="1">' +
+        '<div class="wl-row-top">' +
+          '<code class="wl-case">' + esc(caseNo()) + '</code>' +
+          '<span class="badge badge-biz">' + esc(biz.display || biz.code || '') + '</span>' +
+        '</div>' +
+        '<div class="wl-row-bot">' +
+          '<span class="badge badge-status">' + esc(t.status) + '</span>' +
+          '<span class="wl-lu">updated ' + esc(ts(lu)) + '</span>' +
+        '</div>' +
+      '</button>';
+  }
+
+  function renderAuthorityDetail() {
+    var open = worklistOpen && store.task && state !== 'idle';
+    el('authority-detail').hidden = !open;
+    if (!open) return;
+    var body = '';
+
+    // Open specification — the human-readable structured finished-product spec.
+    body += '<div class="ad-sec">' +
+      '<button class="link-btn" data-act="spec">' + (specOpen ? 'Hide' : 'Open') + ' specification (3.2.P.5.1)</button>' +
+      (specOpen ? '<div class="ad-spec">' + APIX.pqi.renderSpecHtml() + '</div>' : '') +
+    '</div>';
+
+    // Screen batch — choose representative vs out-of-spec; run the conformance check.
+    body += '<div class="ad-sec">' +
+      '<div class="ad-sec-head">Screen batch against the specification</div>' +
+      '<div class="batch-pick" role="group" aria-label="Batch">' +
+        '<button class="pick-opt' + (batchKey === 'good' ? ' on' : '') + '" data-batch="good">Representative</button>' +
+        '<button class="pick-opt' + (batchKey === 'bad' ? ' on' : '') + '" data-batch="bad">Out-of-spec</button>' +
+      '</div>' +
+      (batchScreened ? batchResultHtml() : '<p class="ad-hint">Select a batch and screen it against the structured ObservationDefinitions.</p>') +
+    '</div>';
+
+    el('authority-detail-body').innerHTML = body;
+  }
+
+  function batchResultHtml() {
+    var rows = APIX.pqi.validate(batchKey);
+    var anyFail = rows.some(function (r) { return !r.pass; });
+    var body = rows.map(function (r) {
+      return '<tr' + (r.pass ? '' : ' class="val-fail-row"') + '>' +
+        '<td>' + esc(r.test) + '</td><td>' + esc(r.criterion) + '</td>' +
+        '<td>' + esc(r.measured) + '</td>' +
+        '<td class="' + (r.pass ? 'pass' : 'fail') + '">' + (r.pass ? 'PASS' : 'FAIL') + '</td></tr>';
+    }).join('');
+    var banner = anyFail
+      ? '<div class="val-banner val-banner-fail">Non-conformance flagged — ' +
+          esc(waterCheck().test) + ' drift detected</div>'
+      : '<div class="val-banner val-banner-pass">Batch conforms — all limits met</div>';
+    return '<div class="ad-batch-label">' + esc(batchLabel()) + '</div>' + banner +
+      '<table class="val-table"><thead><tr><th>Test</th><th>Criterion</th><th>Measured</th><th>Result</th></tr></thead>' +
+      '<tbody>' + body + '</tbody></table>';
+  }
+
+  // FDA regulatory actions, gated by state; the suggested next is highlighted.
+  function renderAuthorityActions() {
+    var rows = [];
+    function reg(id, label, validIn, hint) {
+      var ok = state === validIn;
+      rows.push(actionBtn(id, label, ok, ok, hint));
+    }
+    reg('reg-ack', 'Acknowledge receipt', 'submitted', 'PUT Task → received');
+    reg('reg-conformance', 'Run conformance check', 'received', 'PUT Task → validation-successful');
+    reg('reg-screen', 'Screen batch (assess)', 'validation-successful', 'PUT Task → under-assessment');
+    reg('reg-info', 'Raise Information Request', 'under-assessment', 'PUT Task → clock-stop');
+    // Decision: valid once the applicant has responded (clock-restart). Allow re-deciding.
+    var canDecide = state === 'clock-restart' || (decided && state === 'decided');
+    rows.push(actionBtn('reg-approve', 'Approve', canDecide, canDecide && decided !== 'approve',
+      'PUT Task → completed / approved'));
+    rows.push(actionBtn('reg-reject', 'Issue Complete Response', canDecide, canDecide && decided !== 'reject',
+      'PUT Task → completed / rejected'));
+    el('authority-actions').innerHTML = rows.join('');
+  }
+
+  /* A console action button: disabled when invalid; "suggested next" gets accent. */
+  function actionBtn(id, label, enabled, suggested, hint) {
+    return '<button class="act-btn' + (suggested ? ' act-next' : '') + '" id="' + id + '"' +
+      (enabled ? '' : ' disabled') + '>' +
+      '<span class="act-label">' + esc(label) + '</span>' +
+      '<span class="act-hint io-method-inline">' + esc(hint) + '</span>' +
+    '</button>';
+  }
+
+  /* ======================== STATE BAR (BOTTOM) ========================= */
+  function renderStateBar() {
+    var t = store.task;
+    var line = el('sb-task-line');
+    if (!t || state === 'idle') {
+      el('sb-task-summary').textContent = 'not created';
+      el('sb-task-summary').hidden = false;
+      el('sb-task-view').hidden = true;
+      el('sb-task-json').hidden = true;
+      line.querySelector('.sb-detail') && line.querySelector('.sb-detail').remove();
+      return;
+    }
+    var v = (t.meta && t.meta.versionId) || '1';
+    var biz = (t.businessStatus && t.businessStatus.coding && t.businessStatus.coding[0]) ? t.businessStatus.coding[0] : {};
+    var lu = (t.meta && t.meta.lastUpdated) ? new Date(t.meta.lastUpdated) : now();
+    el('sb-task-summary').hidden = true;
+    var existing = line.querySelector('.sb-detail');
+    var html =
+      '<code class="sb-id">Task/' + esc(t.id) + '</code>' +
+      '<span class="sb-ver">v' + esc(v) + '</span>' +
+      '<span class="badge badge-status">' + esc(t.status) + '</span>' +
+      '<span class="badge badge-biz">' + esc(biz.display || biz.code || '') + '</span>' +
+      '<span class="sb-lu">lastUpdated ' + esc(ts(lu)) + '</span>';
+    if (existing) existing.innerHTML = html;
+    else {
+      var d = document.createElement('span');
+      d.className = 'sb-detail';
+      d.innerHTML = html;
+      el('sb-task-view').before(d);
+    }
+    el('sb-task-view').hidden = false;
+    if (!el('sb-task-json').hidden) el('sb-task-json').innerHTML = APIX.highlight(t);
   }
 
   /* ---- Audit trail (FHIR Provenance) ---- */
@@ -884,53 +405,184 @@
       (p.authorization && p.authorization[0] && p.authorization[0].concept && p.authorization[0].concept.text) || '';
   }
   function renderAuditEntry(p) {
-    var when = p.recorded ? new Date(p.recorded).toLocaleTimeString() : '';
+    var when = p.recorded ? ts(new Date(p.recorded)) : '';
     return '<tr><td class="aud-when">' + esc(when) + '</td>' +
       '<td>' + provWho(p) + '</td><td>' + provWhat(p) + '</td>' +
       '<td class="aud-why">' + esc(provWhy(p)) +
-        ' <button class="link-btn" data-inspect="prov:' + esc(p.id) + '">view</button></td></tr>';
+        ' <button class="link-btn" data-prov="' + esc(p.id) + '">view</button></td></tr>';
   }
   function renderAudit() {
-    var has = auditEntries.length > 0;
-    el('audit-sec').hidden = !has;
-    el('audit-note').hidden = !has;
-    el('audit-wrap').hidden = !has;
     el('audit-count').textContent = auditEntries.length;
-    if (!has) { el('audit-wrap').innerHTML = ''; return; }
-    el('audit-wrap').innerHTML =
+    var host = el('audit-wrap');
+    if (!auditEntries.length) { host.innerHTML = '<div class="empty">No audit records yet.</div>'; return; }
+    host.innerHTML =
       '<table class="grid audit-table"><thead><tr><th>When</th><th>Who</th><th>What</th><th>Why</th></tr></thead><tbody>' +
         auditEntries.map(renderAuditEntry).join('') + '</tbody></table>';
   }
   function addAudit(p) { auditEntries.push(p); renderAudit(); }
 
-  /* ============================ STORE EVENTS ============================ */
+  /* ============================ RENDER ALL ============================== */
+  function render() {
+    el('case-no').textContent = (state === 'idle') ? '—' : caseNo();
+    renderApplicant();
+    renderAuthority();
+    renderStateBar();
+  }
+
+  /* ============================ HANDLERS =============================== */
+  // Each transition is a REAL engine call; the 'io'/'task'/'notification'/
+  // 'provenance' events drive the timeline, panels, status chips and audit.
+
+  async function doSubmit() {
+    if (inFlight || state !== 'idle') return;
+    inFlight = true;
+    try {
+      // Author the structured content (fires the real $translate calls), then
+      // run the genuine connect → submit → subscribe chain.
+      APIX.terminology.rows().forEach(function (r) {
+        APIX.client.translate(r.source.system, r.source.code);
+      });
+      APIX.pqi.normalize();
+
+      setConn('connecting', 'Connecting…');
+      await store.connect();
+      await store.submit();
+      if (!reached['submitted']) reached['submitted'] = now();
+      await store.subscribe();
+      state = 'submitted';
+      worklistOpen = true;
+      setConn('connected', isLive() ? 'Connected · ' + APIX.config.activeBase() : 'Connected · mock');
+    } catch (e) {
+      setConn('error', 'Connection error');
+    }
+    inFlight = false;
+    render();
+  }
+
+  async function advance(effect, nextState) {
+    if (inFlight) return;
+    inFlight = true;
+    try {
+      await store.updateTask(effect);
+      state = nextState;
+    } catch (e) { /* surface stays usable */ }
+    inFlight = false;
+    render();
+  }
+
+  // FDA actions — verbatim effect payloads from the prior controller.
+  function doAcknowledge() {
+    if (state !== 'submitted') return;
+    return advance({ type: 'updateTask', status: 'received', businessStatus: 'received', addProcedureNo: true, addOutputs: ['ack'] }, 'received');
+  }
+  function doConformance() {
+    if (state !== 'received') return;
+    return advance({ type: 'updateTask', status: 'accepted', businessStatus: 'validation-successful', addOutputs: ['validation'], flexibility: true }, 'validation-successful');
+  }
+  function doScreenStart() {
+    if (state !== 'validation-successful') return;
+    return advance({ type: 'updateTask', status: 'in-progress', businessStatus: 'under-assessment' }, 'under-assessment');
+  }
+  function doInfoRequest() {
+    if (state !== 'under-assessment' || infoAsked) return;
+    infoAsked = true;
+    return advance({ type: 'updateTask', status: 'on-hold', businessStatus: 'clock-stop', taskCode: 'information-request' }, 'clock-stop');
+  }
+  function doRespond() {
+    if (state !== 'clock-stop' || answered) return;
+    answered = true;
+    return advance({ type: 'updateTask', status: 'in-progress', businessStatus: 'clock-restart', taskCode: 'response-to-questions' }, 'clock-restart');
+  }
+  async function doDecision(kind) {
+    if (inFlight) return;
+    var canDecide = state === 'clock-restart' || state === 'decided';
+    if (!canDecide || kind === decided) return;
+    inFlight = true;
+    try {
+      if (kind === 'approve') {
+        await store.updateTask({ type: 'updateTask', status: 'completed', businessStatus: 'approved', taskCode: 'approval', addOutputs: ['approval', 'assessment'] });
+        decided = 'approve';
+      } else {
+        await store.updateTask({ type: 'updateTask', status: 'completed', businessStatus: 'rejected', taskCode: 'rejection', addOutputs: ['rejection'], statusReason: 'Complete Response: the tested batch did not meet the proposed limit.' });
+        decided = 'reject';
+      }
+      state = 'decided';
+    } catch (e) { /* surface stays usable */ }
+    inFlight = false;
+    render();
+  }
+
+  // Batch / spec controls — local, no engine state change.
+  function doScreenBatch(key) {
+    batchKey = key;
+    batchScreened = true;
+    renderAuthorityDetail();
+  }
+  function doToggleSpec() { specOpen = !specOpen; renderAuthorityDetail(); }
+
+  /* ============================ MODAL ================================== */
+  function openModal(title, html) {
+    el('modal-title').textContent = title;
+    el('modal-content').innerHTML = html;
+    el('modal').hidden = false;
+  }
+  function closeModal() { el('modal').hidden = true; }
+
+  function viewNotif() {
+    openModal('Subscription notification Bundle',
+      '<pre class="modal-json">' + APIX.highlight(lastNotif || { resourceType: 'Bundle', type: 'subscription-notification' }) + '</pre>');
+  }
+  function viewProvenance(id) {
+    var pr = store.get('Provenance/' + id);
+    if (pr) openModal('Provenance — audit record', '<pre class="modal-json">' + APIX.highlight(pr) + '</pre>');
+  }
+
+  /* ============================ STORE EVENTS =========================== */
   store.bus.addEventListener('task', function (ev) {
     if (ev.detail.firstTime && !reached['submitted']) reached['submitted'] = now();
+    renderWorklist(); renderStateBar();
   });
   store.bus.addEventListener('notification', function (ev) {
     lastNotif = ev.detail.bundle;
     var code = ev.detail.businessStatus;
-    setTimeout(function () { reached[code] = now(); }, 200);
+    reached[code] = now();
+    // Frame each push as a message landing in the applicant's inbox. The gloss
+    // reads "<short title> — <explanation>"; split it into subject + body.
+    var g = gloss(code) || ('Status update — ' + code);
+    var dash = g.indexOf(' — ');
+    var subject = dash > 0 ? g.slice(0, dash) : g;
+    var body = dash > 0 ? g.slice(dash + 3) : '';
+    var alert = code === 'clock-stop';
+    if (code === 'clock-stop') body = APIX.RSI.question;        // the actual List of Questions
+    inbox.unshift({ time: now(), subject: subject, body: body, bundle: ev.detail.bundle, alert: alert });
+    renderInbox(); el('inbox-count').textContent = inbox.length;
+    renderApplicant();
   });
   store.bus.addEventListener('provenance', function (ev) { addAudit(ev.detail.provenance); });
   APIX.client.bus.addEventListener('io', function (ev) { addIo(ev.detail); });
 
   /* ============================ RESET ================================== */
   function resetAll() {
-    beat = 1; doneBeat = {}; inFlight = false;
-    changeView = 'document'; sent = false;
-    batchKey = 'good'; batchChecked = false; checkDone = false; infoAsked = false; decided = null; aiRun = false;
-    reached = {}; lastNotif = null; ioEntries = []; auditEntries = [];
+    state = 'idle'; inFlight = false;
+    batchKey = 'good'; batchScreened = false; specOpen = false;
+    infoAsked = false; answered = false; decided = null; worklistOpen = false;
+    reached = {}; lastNotif = null; inbox = []; ioEntries = []; auditEntries = [];
     store.reset();
+    el('exch-log').innerHTML = '<div class="empty">No exchanges yet. Submit the supplement to begin.</div>';
+    el('exch-count').textContent = '0';
     renderAudit();
-    el('io-list').innerHTML = '';
-    el('inspect-focus').innerHTML = '';
-    setIoCount();
-    closeInspect();
+    closeModal();
+    setConn('idle', isLive() ? 'Not connected · ' + APIX.config.activeBase() : 'Not connected · mock');
     render();
   }
 
-  /* ===================== BACKEND TOGGLE (mock/local/live) =============== */
+  /* ===================== CONNECTION STATUS ============================= */
+  function setConn(kind, label) {
+    el('conn-dot').className = 'cb-dot cb-dot-' + kind;
+    el('conn-label').textContent = label;
+  }
+
+  /* ===================== BACKEND TOGGLE (mock/local/live) ============== */
   function isLive() { return APIX.config && APIX.config.backend === 'hapi'; }
   function isLocal() { return APIX.config && APIX.config.backend === 'local'; }
   function reflectBackend() {
@@ -940,18 +592,11 @@
     el('backend-mock').classList.toggle('on', !live && !local);
     el('backend-live').classList.toggle('on', live);
     el('backend-local').classList.toggle('on', local);
-    el('live-indicator').hidden = !live;
     el('local-base').hidden = !local;
-    var lb = el('livebar');
-    if (lb) {
-      lb.hidden = !live && !local;
-      lb.classList.toggle('livebar-live', live);
-      lb.classList.toggle('livebar-local', local);
-      if (live) lb.innerHTML = '<span class="lb-dot"></span><strong>LIVE</strong> — real HTTP calls to a ' +
-        'public FHIR R5 server <code>hapi.fhir.org/baseR5</code>. Open <strong>Inspect</strong> to watch each request &amp; response.';
-      else if (local) lb.innerHTML = '<span class="lb-dot lb-dot-local"></span><strong>LOCAL</strong> — ' +
-        'running against your own FHIR server.';
-    }
+    var sb = el('server-base');
+    if (live) { sb.textContent = 'hapi.fhir.org/baseR5'; sb.className = 'server-base sb-live'; }
+    else if (local) { sb.textContent = APIX.config.localBase; sb.className = 'server-base sb-local'; }
+    else { sb.textContent = 'in-memory mock server'; sb.className = 'server-base'; }
   }
   function setBackend(backend) {
     if (!APIX.config || APIX.config.backend === backend) return;
@@ -967,7 +612,6 @@
 
   /* ============================ ABOUT ================================== */
   var ABOUT_HTML =
-    '<div class="if-title">About / FDA context</div>' +
     '<p class="muted">This demo separates two halves: <strong>PQI / PQ-CMC</strong> authors the structured ' +
     'pharmaceutical-quality <em>content</em>; <strong>APIX</strong> is the FHIR R5 <em>transport</em> that ' +
     'submits, tracks, and pushes updates. The thesis — structured CMC content carried by an API-first FHIR ' +
@@ -1015,35 +659,66 @@
     '<tr><td>OAuth2 / SMART Backend Services token</td><td class="sim">Simulated (labeled; orthogonal to the exchange)</td></tr>' +
     '<tr><td>Real-time push delivery</td><td class="sim">Public HAPI: UI reads the Task back. Local HAPI: real WebSocket push.</td></tr>' +
     '</tbody></table>' +
-    '<p class="muted">Mock mode is the stage default: offline, deterministic, instant. ' +
+    '<p class="muted">Mock mode is the default: offline, deterministic, instant. ' +
     '<a href="https://build.fhir.org/ig/HL7/APIX---API-Exchange-for-Medicinal-Products/" target="_blank" rel="noopener">APIX IG ↗</a> · ' +
     '<a href="https://build.fhir.org/ig/HL7/FHIR-us-pq-cmc-fda/" target="_blank" rel="noopener">PQ-CMC FHIR IG ↗</a></p>';
 
   /* ============================ WIRING ================================= */
   document.addEventListener('click', function (ev) {
-    var sum = ev.target.closest('.io-sum');
-    if (sum) { var det = sum.parentNode.querySelector('.io-detail'); if (det) det.hidden = !det.hidden; return; }
-    if (ev.target.closest('#tk-raw-toggle')) {
-      var raw = el('tk-raw'), tg = el('tk-raw-toggle');
-      if (raw) { raw.hidden = !raw.hidden; if (tg) tg.textContent = raw.hidden ? 'Show raw FHIR JSON' : 'Hide raw FHIR JSON'; }
+    // Exchange / IO row expand.
+    var xs = ev.target.closest('.xrow-sum');
+    if (xs) { var det = xs.parentNode.querySelector('.xrow-detail'); if (det) det.hidden = !det.hidden; return; }
+
+    // Worklist row toggle.
+    if (ev.target.closest('[data-wl]')) { worklistOpen = !worklistOpen; renderAuthority(); return; }
+
+    // Batch picker / spec toggle (authority detail).
+    var bp = ev.target.closest('[data-batch]'); if (bp) { doScreenBatch(bp.getAttribute('data-batch')); return; }
+
+    // Notification / provenance viewers.
+    if (ev.target.closest('[data-view-notif]')) { viewNotif(); return; }
+    var pv = ev.target.closest('[data-prov]'); if (pv) { viewProvenance(pv.getAttribute('data-prov')); return; }
+
+    // Task JSON expand in the state bar.
+    if (ev.target.closest('#sb-task-view')) {
+      var j = el('sb-task-json');
+      if (j.hidden) { j.innerHTML = APIX.highlight(store.task || {}); j.hidden = false; el('sb-task-view').textContent = 'hide JSON'; }
+      else { j.hidden = true; el('sb-task-view').textContent = 'view JSON'; }
       return;
     }
-    if (ev.target.closest('#wl-decode')) { decodeWrapperBinary(); return; }
-    var ins = ev.target.closest('[data-inspect]'); if (ins) { inspectKey(ins.getAttribute('data-inspect')); return; }
-    var vw = ev.target.closest('[data-view]'); if (vw) { setView(vw.getAttribute('data-view')); return; }
-    var dec = ev.target.closest('[data-decision]'); if (dec) { onDecision(dec.getAttribute('data-decision')); return; }
-    var a = ev.target.closest('[data-act]'); if (a) { runAct(a.getAttribute('data-act')); return; }
+
+    // Generic act buttons (spec toggle lives here too).
+    var a = ev.target.closest('[data-act]');
+    if (a) { if (a.getAttribute('data-act') === 'spec') doToggleSpec(); return; }
+
+    // Action buttons by id.
+    var id = ev.target.closest('button') && ev.target.closest('button').id;
+    if (id === 'app-submit') return doSubmit();
+    if (id === 'app-respond') return doRespond();
+    if (id === 'reg-ack') return doAcknowledge();
+    if (id === 'reg-conformance') return doConformance();
+    if (id === 'reg-screen') return doScreenStart();
+    if (id === 'reg-info') return doInfoRequest();
+    if (id === 'reg-approve') return doDecision('approve');
+    if (id === 'reg-reject') return doDecision('reject');
   });
 
   el('resetbtn').addEventListener('click', resetAll);
-  el('inspect-toggle').addEventListener('click', toggleInspect);
-  el('inspect-close').addEventListener('click', closeInspect);
-  el('about-btn').addEventListener('click', function () { el('inspect-focus').innerHTML = ABOUT_HTML; openInspect(); });
+  el('about-btn').addEventListener('click', function () { openModal('About / FDA context / maturity', ABOUT_HTML); });
+  el('modal-close').addEventListener('click', closeModal);
+  el('modal').addEventListener('click', function (ev) { if (ev.target === el('modal')) closeModal(); });
+  el('sb-audit-toggle').addEventListener('click', function () {
+    var w = el('audit-wrap');
+    w.hidden = !w.hidden;
+    el('sb-audit-chev').textContent = w.hidden ? '▸' : '▾';
+  });
   el('backend-mock').addEventListener('click', function () { setBackend('mock'); });
   el('backend-live').addEventListener('click', function () { setBackend('hapi'); });
   el('backend-local').addEventListener('click', function () { setBackend('local'); });
   el('local-base').addEventListener('change', function () { syncLocalBase(); if (isLocal()) resetAll(); });
 
   reflectBackend();
+  setConn('idle', 'Not connected · mock');
+  renderAudit();
   render();
 })();

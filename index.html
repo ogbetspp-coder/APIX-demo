@@ -3,63 +3,148 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>APIX × PQI — FDA Pharmaceutical Quality Supplement Demo</title>
+  <title>APIX Exchange Console — FHIR R5</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <!-- ============================ HEADER (quiet) ============================ -->
-  <header class="topbar">
-    <div class="brand">
-      <div class="brand-text">
-        <h1>HL7 Vulcan · APIX × PQI</h1>
-        <p>Structured submissions, tracked in real time</p>
+  <!-- ============================ TOP BAR ============================ -->
+  <header class="console-bar">
+    <div class="cb-brand">
+      <div class="cb-brand-mark">APIX</div>
+      <div class="cb-brand-text">
+        <strong>APIX Exchange Console</strong>
+        <span>FHIR R5 · API Exchange for Medicinal Products</span>
       </div>
     </div>
-    <div class="header-tools">
-      <div class="backend" id="backend-toggle" role="group" aria-label="Backend">
-        <button class="backend-opt on" id="backend-mock">Mock</button>
-        <button class="backend-opt" id="backend-local">Local</button>
-        <button class="backend-opt" id="backend-live">Live</button>
+
+    <div class="cb-case" id="case-chip">
+      <span class="cb-case-k">Case</span>
+      <code id="case-no">—</code>
+      <span class="cb-case-sep">·</span>
+      <span class="cb-case-prod">Velexa 175 mg — Prior Approval Supplement</span>
+    </div>
+
+    <div class="cb-tools">
+      <span class="cb-conn" id="conn">
+        <span class="cb-dot" id="conn-dot"></span>
+        <span class="cb-conn-label" id="conn-label">Not connected</span>
+      </span>
+
+      <div class="cb-backend">
+        <div class="backend" id="backend-toggle" role="group" aria-label="Backend">
+          <button class="backend-opt on" id="backend-mock">Mock</button>
+          <button class="backend-opt" id="backend-local">Local</button>
+          <button class="backend-opt" id="backend-live">Live</button>
+        </div>
+        <input class="local-base" id="local-base" type="text" spellcheck="false"
+               aria-label="Local server base URL" value="http://localhost:8080/fhir" hidden>
+        <span class="server-base" id="server-base">in-memory mock server</span>
       </div>
-      <input class="local-base" id="local-base" type="text" spellcheck="false"
-             aria-label="Local server base URL" value="http://localhost:8080/fhir" hidden>
-      <span class="live-indicator" id="live-indicator" hidden>hapi.fhir.org/baseR5</span>
-      <button class="tool-btn" id="inspect-toggle" aria-expanded="false" title="Technical detail — real FHIR R5 &amp; live API calls">
-        Inspect <span class="io-count" id="io-count">0</span>
-      </button>
-      <button class="tool-btn" id="about-btn" title="About this demo / FDA context">About / FDA context</button>
+
+      <button class="tool-btn" id="about-btn" title="About this demo / FDA context / maturity">About / maturity</button>
       <button class="tool-btn" id="resetbtn" title="Start over">Reset</button>
     </div>
   </header>
 
-  <!-- ===== breadcrumb: the only persistent progress indicator ===== -->
-  <nav class="crumb" id="crumb" aria-label="Progress"></nav>
+  <!-- ============================ MAIN GRID ============================ -->
+  <main class="console">
 
-  <!-- ===== live/local server bar — visible "this runs on real FHIR" state ===== -->
-  <div class="livebar" id="livebar" hidden></div>
+    <!-- ===== LEFT — Applicant ===== -->
+    <section class="party" id="applicant">
+      <div class="party-head">
+        <span class="party-org">SynthPharma</span>
+        <span class="party-role">Applicant system</span>
+      </div>
+      <div class="party-body">
+        <div class="case-status">
+          <div class="cs-label">Case status</div>
+          <div class="cs-value" id="applicant-status">Not yet submitted</div>
+        </div>
 
-  <!-- =========================== CENTERED BEAT STAGE ======================= -->
-  <main class="stage" id="stage">
-    <div class="beat" id="beat" aria-live="polite"></div>
+        <div class="panel">
+          <div class="panel-head">Inbox
+            <span class="panel-count" id="inbox-count">0</span></div>
+          <div class="panel-body inbox" id="inbox">
+            <div class="empty">No messages from FDA yet.</div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">Actions</div>
+          <div class="panel-body actions" id="applicant-actions"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== CENTER — Exchange (the star) ===== -->
+    <section class="wire" id="exchange">
+      <div class="wire-head">
+        <span class="wire-title">Exchange — live FHIR</span>
+        <span class="wire-sub">real HTTP request / response stream</span>
+        <span class="panel-count" id="exch-count">0</span>
+      </div>
+      <div class="wire-body" id="exch-log">
+        <div class="empty">No exchanges yet. Submit the supplement to begin.</div>
+      </div>
+    </section>
+
+    <!-- ===== RIGHT — Authority ===== -->
+    <section class="party" id="authority">
+      <div class="party-head">
+        <span class="party-org">FDA</span>
+        <span class="party-role">Health Authority system</span>
+      </div>
+      <div class="party-body">
+        <div class="panel">
+          <div class="panel-head">Worklist
+            <span class="panel-count" id="worklist-count">0</span></div>
+          <div class="panel-body" id="worklist">
+            <div class="empty">No submissions in queue.</div>
+          </div>
+        </div>
+
+        <div class="panel" id="authority-detail" hidden>
+          <div class="panel-head">Case detail</div>
+          <div class="panel-body" id="authority-detail-body"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">Actions</div>
+          <div class="panel-body actions" id="authority-actions"></div>
+        </div>
+      </div>
+    </section>
   </main>
 
-  <!-- =================== INSPECT slide-over (the ONLY place FHIR appears) === -->
-  <aside class="inspect" id="inspect" hidden>
-    <div class="inspect-head">
-      <span class="inspect-title">Inspect</span>
-      <button class="inspect-close" id="inspect-close">×</button>
+  <!-- ============================ STATE BAR ============================ -->
+  <footer class="statebar">
+    <div class="sb-task">
+      <div class="sb-task-line" id="sb-task-line">
+        <span class="sb-k">Task</span>
+        <span class="sb-muted" id="sb-task-summary">not created</span>
+        <button class="link-btn" id="sb-task-view" hidden>view JSON</button>
+      </div>
+      <pre class="modal-json sb-json" id="sb-task-json" hidden></pre>
     </div>
-    <div class="inspect-body">
-      <p class="inspect-tech-note">Technical detail — real FHIR R5.</p>
-      <div class="inspect-focus" id="inspect-focus"></div>
-      <div class="inspect-sec" id="audit-sec" hidden>Audit trail
-        <span class="audit-count" id="audit-count">0</span></div>
-      <div class="audit-note" id="audit-note" hidden><code>Provenance</code> · 21 CFR Part 11 / ALCOA</div>
-      <div class="audit-wrap" id="audit-wrap" hidden></div>
-      <div class="inspect-sec">API calls</div>
-      <div class="io-list" id="io-list"></div>
+    <div class="sb-audit">
+      <button class="sb-audit-head" id="sb-audit-toggle">
+        Audit — Provenance <span class="panel-count" id="audit-count">0</span>
+        <span class="sb-chev" id="sb-audit-chev">▸</span>
+      </button>
+      <div class="sb-audit-body" id="audit-wrap" hidden></div>
     </div>
-  </aside>
+  </footer>
+
+  <!-- ============================ MODAL (About / detail overlays) ======= -->
+  <div class="modal-scrim" id="modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true">
+      <div class="modal-bar">
+        <span class="modal-title" id="modal-title">Detail</span>
+        <button class="modal-close" id="modal-close" aria-label="Close">×</button>
+      </div>
+      <div class="modal-content" id="modal-content"></div>
+    </div>
+  </div>
 
   <script src="js/highlight.js"></script>
   <script src="js/codesystems.js"></script>
