@@ -265,16 +265,39 @@
   }
   /* Beat 4 dispatch alias kept distinct from the auto-check (Beat 3). */
 
-  /* The two-message Information Request exchange (real engine text). */
+  /* The two-way Information Request — a key APIX promise: the regulator's List of
+     Questions and the sponsor's response ride the SAME live channel as the
+     submission, in real time, with the review clock stopping/restarting and every
+     turn tracked. (Real engine: clock-stop / information-request → clock-restart /
+     response-to-questions, each emitting a notification + audit record.) */
+  function msgHtml(from, to, kind, body) {
+    return '<div class="msg msg-' + (from === 'FDA' ? 'ha' : 'sponsor') + '">' +
+      '<div class="msg-meta"><span class="msg-from">' + esc(from) + '</span>' +
+        '<span class="msg-route">→ ' + esc(to) + ' · via APIX · delivered in real time ✓</span></div>' +
+      '<div class="msg-kind">' + esc(kind) + '</div>' +
+      '<div class="msg-body">' + esc(body) + '</div></div>';
+  }
+
   function rsiHtml() {
     var answered = !!doneBeat.answered;
-    var q = '<div class="msg msg-ha"><div class="msg-from">FDA</div>' +
-      '<div class="msg-body">' + esc(APIX.RSI.question) + '</div></div>';
+    var clock = answered
+      ? '<span class="ir-clock ir-run">Review clock · running again</span>'
+      : '<span class="ir-clock ir-stop">Review clock · stopped</span>';
+
+    var head = '<div class="ir-head"><span class="ir-title">Information Request</span>' +
+      '<span class="ir-live">live on APIX</span>' + clock + '</div>' +
+      '<p class="ir-note">Same case <code>' + esc(caseNo()) + '</code>, same channel as the submission — ' +
+        'questions and answers exchanged in real time, every turn tracked and attributed. ' +
+        'No email, no portal, no lost attachments. ' +
+        '<button class="link-btn" data-inspect="audit">see the tracked exchange { }</button></p>';
+
+    var q = msgHtml('FDA', 'SynthPharma', 'List of Questions', APIX.RSI.question);
     var a = answered
-      ? '<div class="msg msg-sponsor"><div class="msg-from">SynthPharma</div>' +
-          '<div class="msg-body">' + esc(APIX.RSI.answer) + '</div></div>'
-      : '<div class="b-controls"><button class="btn-ghost" data-act="answer">Send sponsor reply</button></div>';
-    return q + a;
+      ? msgHtml('SynthPharma', 'FDA', 'Response to Information Request', APIX.RSI.answer) +
+        '<p class="ir-foot">Answered on the same channel — the review clock restarted the instant FDA received the response.</p>'
+      : '<div class="b-controls"><button class="btn-ghost" data-act="answer">SynthPharma responds →</button></div>';
+
+    return '<div class="ir">' + head + q + a + '</div>';
   }
 
   function fmtElapsed(ms) {
@@ -469,6 +492,20 @@
   async function doAnswer() {
     if (inFlight) return;
     inFlight = true;
+    // Show a live "composing" indicator on the channel before the reply lands.
+    if (!reduced()) {
+      var ir = el('beat').querySelector('.ir');
+      if (ir) {
+        var ctrl = ir.querySelector('.b-controls'); if (ctrl) ctrl.remove();
+        var t = document.createElement('div');
+        t.className = 'msg msg-sponsor msg-typing';
+        t.innerHTML = '<div class="msg-meta"><span class="msg-from">SynthPharma</span>' +
+          '<span class="msg-route">→ FDA · via APIX</span></div>' +
+          '<div class="typing"><span></span><span></span><span></span></div>';
+        ir.appendChild(t);
+      }
+      await delay(1150);
+    }
     try {
       await store.updateTask({ type: 'updateTask', status: 'in-progress', businessStatus: 'clock-restart', taskCode: 'response-to-questions' });
       doneBeat.answered = true;
