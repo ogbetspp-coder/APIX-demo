@@ -150,49 +150,26 @@
     } catch (e) { return '215123/S-005'; }
   }
 
-  /* What APIX actually does on "send", and why it's a step-change. This is the
-     heart of the talk — keep it concrete and lay-readable, never a feature dump. */
-  function apixStoryHtml() {
-    var steps = [
-      ['Packaged as structured data', 'every limit, method and result as fields a computer can read — not prose buried in a PDF.'],
-      ['Sent over a live API', 'a real call straight into FDA’s system — no portal upload, no email, no posting paper.'],
-      ['Tracked as one shared case', 'applicant and FDA watch the very same record — ending the “where’s my submission?” emails.'],
-      ['Updates pushed back in real time', 'every status change lands the instant FDA makes it — nobody logs in to check.']
-    ];
-    var li = steps.map(function (s, i) {
-      return '<li style="animation-delay:' + (i * 90) + 'ms"><span class="ax-n">' + (i + 1) + '</span>' +
-        '<div><b>' + esc(s[0]) + '</b><span>' + esc(s[1]) + '</span></div></li>';
-    }).join('');
-
-    var rows = [
-      ['Format', 'A PDF document', 'Structured data'],
-      ['Delivery', 'Uploaded to a portal', 'A live API call'],
-      ['Checking', 'Re-typed &amp; read by hand', 'Read &amp; checked by machine'],
-      ['Status', 'Chase it by email', 'Pushed in real time']
-    ];
-    var ba = rows.map(function (r) {
-      return '<tr><th>' + r[0] + '</th><td class="ba-old">' + r[1] + '</td><td class="ba-new">' + r[2] + '</td></tr>';
-    }).join('');
-
-    return '<h2 class="b-head">SynthPharma didn’t email a PDF. APIX sent it as live data.</h2>' +
-      '<p class="apix-case">Tracked as case <code>' + esc(caseNo()) + '</code>, shared by both sides. ' +
-        '<button class="link-btn" data-inspect="wrapper">{ } see the live API call &amp; payload</button></p>' +
+  /* SHOW, don't tell: after the send, state the one concrete fact that proves it
+     happened — FDA's system received it and stamped a shared case number — and
+     point to the real request/response. No benefit tables; the live exchange,
+     the real case id and the real server do the talking. */
+  function sendResultHtml() {
+    return '<p class="send-result">FDA’s system received it and stamped the shared case ' +
+        '<code>' + esc(caseNo()) + '</code>. Applicant and FDA now track the same record, updated in real time. ' +
+        '<button class="link-btn" data-inspect="wrapper">see the live API call &amp; payload { }</button></p>' +
       '<p class="server-note">' + (isLive()
         ? 'That was a <strong>real</strong> HTTP call to <code>hapi.fhir.org/baseR5</code> — a public FHIR R5 server, not a mock. Watch the request &amp; response in Inspect.'
         : 'Shown on a mock server for pacing — flip to <strong>Live</strong> (top right) to run this exact exchange against a real FHIR R5 server, <code>hapi.fhir.org/baseR5</code>.') +
-      '</p>' +
-      '<ol class="apix-steps">' + li + '</ol>' +
-      '<div class="apix-why">' +
-        '<div class="apix-why-cap">Why it’s a game-changer</div>' +
-        '<table class="ba"><thead><tr><th></th><th>The old way</th><th>With APIX</th></tr></thead>' +
-        '<tbody>' + ba + '</tbody></table></div>';
+      '</p>';
   }
 
   function renderBeat2() {
     el('beat').innerHTML =
       '<div class="actor">SynthPharma · submitting to FDA</div>' +
+      '<h2 class="b-head">Submitting to FDA over APIX.</h2>' +
       exchangeShell(sent, sent) +
-      apixStoryHtml() +
+      sendResultHtml() +
       '<div class="b-controls">' +
         '<button class="btn-primary" data-act="to-check">See FDA’s system read it →</button>' +
       '</div>';
@@ -242,7 +219,7 @@
 
     el('beat').innerHTML =
       '<div class="actor">FDA · automated screening</div>' +
-      '<h2 class="b-head">The instant the data lands, FDA’s system checks every limit.</h2>' +
+      '<h2 class="b-head">FDA’s system checks the batch against every limit.</h2>' +
       '<p class="b-why ev-sub">The submitted specification and the batch’s results are both structured data, ' +
         'so the system compares them itself — no reviewer re-typing values or cross-reading a PDF. ' +
         '<button class="link-btn" data-inspect="batch">see the acceptance criteria { }</button></p>' +
@@ -281,45 +258,14 @@
       '</div>';
   }
 
-  /* What APIX does for the conversation, and why it's a step-change — mirrors
-     apixStoryHtml()'s structure exactly. */
-  function qaStoryHtml() {
-    var steps = [
-      ['Carries the List of Questions as structured data', 'the regulator’s questions ride the same case, not a PDF letter in the post.'],
-      ['Stops the review clock automatically', 'the regulatory timer is part of the record, not a reviewer’s spreadsheet.'],
-      ['Pushes the questions to the sponsor in real time', 'no mailroom, no portal login, no waiting to find out a question was even asked.'],
-      ['Brings the answer back on the same channel', 'the clock restarts the instant FDA receives it, and every turn is tracked and attributed.']
-    ];
-    var li = steps.map(function (s, i) {
-      return '<li style="animation-delay:' + (i * 90) + 'ms"><span class="ax-n">' + (i + 1) + '</span>' +
-        '<div><b>' + esc(s[0]) + '</b><span>' + esc(s[1]) + '</span></div></li>';
-    }).join('');
-
-    var rows = [
-      ['Format', 'A letter / PDF attachment', 'A structured message'],
-      ['Channel', 'Email and portal threads', 'One live channel'],
-      ['Review clock', 'Reconciled by hand', 'Stopped &amp; restarted automatically'],
-      ['Each round', 'Days to weeks', 'Real time']
-    ];
-    var ba = rows.map(function (r) {
-      return '<tr><th>' + r[0] + '</th><td class="ba-old">' + r[1] + '</td><td class="ba-new">' + r[2] + '</td></tr>';
-    }).join('');
-
-    return '<ol class="apix-steps">' + li + '</ol>' +
-      '<div class="apix-why">' +
-        '<div class="apix-why-cap">Why it’s a game-changer</div>' +
-        '<table class="ba"><thead><tr><th></th><th>The old way</th><th>With APIX</th></tr></thead>' +
-        '<tbody>' + ba + '</tbody></table></div>';
-  }
-
   function renderBeat4() {
     var answered = !!doneBeat.answered;
     el('beat').innerHTML =
       '<div class="actor">FDA · review</div>' +
-      '<h2 class="b-head">FDA has a question — and asks it on APIX, not by letter.</h2>' +
+      '<h2 class="b-head">FDA has a question.</h2>' +
+      '<p class="qa-caption">It travels on the same case as the submission. Watch the review clock: ' +
+        'it stops the moment FDA asks, and restarts the moment SynthPharma answers.</p>' +
       qaExchangeShell(answered) +
-      '<div class="apix-why-cap">What APIX does for the conversation</div>' +
-      qaStoryHtml() +
       '<div class="rsi">' + rsiHtml() + '</div>' +
       '<div class="b-controls">' +
         '<button class="btn-primary" data-act="to-decision"' + (answered ? '' : ' disabled') + '>FDA decides →</button>' +
@@ -407,27 +353,36 @@
       '<div class="db-cap">What FDA is deciding on</div>' + items + '</div>';
   }
 
+  /* Both outcomes stay live so the room can pick one, see what it triggers, then
+     click the other to compare. The chosen card is marked; the engine fires the
+     real update each time. */
   function decisionCardsHtml() {
+    function card(kind, cls, title, conseq) {
+      var sel = decided === kind ? ' is-selected' : '';
+      var mark = decided === kind ? '<span class="dec-mark">✓ chosen</span>' : '';
+      return '<button class="dec-card ' + cls + sel + '" data-decision="' + kind + '">' +
+        '<span class="dec-title">' + title + mark + '</span>' +
+        '<span class="dec-conseq">' + conseq + '</span></button>';
+    }
     return '<div class="dec-cards">' +
-      '<button class="dec-card dec-approve" data-decision="approve">' +
-        '<span class="dec-title">Approve</span>' +
-        '<span class="dec-conseq">The supplement is approved; the tightened Water Content limit takes effect.</span>' +
-      '</button>' +
-      '<button class="dec-card dec-reject" data-decision="reject">' +
-        '<span class="dec-title">Issue Complete Response</span>' +
-        '<span class="dec-conseq">Not approved — FDA issues a Complete Response Letter citing the deficiency.</span>' +
-      '</button>' +
-    '</div>';
+        card('approve', 'dec-approve', 'Approve',
+          'The supplement is approved; the tightened Water Content limit takes effect.') +
+        card('reject', 'dec-reject', 'Issue Complete Response',
+          'Not approved — FDA issues a Complete Response Letter citing the deficiency.') +
+      '</div>' +
+      '<p class="dec-hint">' + (decided
+        ? 'Both outcomes are live — click the other card to see what it triggers instead.'
+        : 'FDA’s two options. Click one to see what it triggers — then switch to compare.') + '</p>';
   }
 
   function renderBeat5() {
-    var actions = decided ? payoffHtml() : decisionCardsHtml();
     el('beat').innerHTML =
       '<div class="actor">FDA · decision</div>' +
       '<h2 class="b-head">FDA decides — on the evidence.</h2>' +
       decisionBasisHtml() +
       aiPanelHtml() +
-      actions;
+      decisionCardsHtml() +
+      (decided ? payoffHtml() : '');
   }
 
   /* The AI panel — decision support in Beat 5. Output streams from real data. */
@@ -598,7 +553,7 @@
 
   /* --- Beat 5: FDA decision (Approve / Issue Complete Response). --- */
   async function onDecision(kind) {
-    if (inFlight || beat !== 5 || decided) return;
+    if (inFlight || beat !== 5 || kind === decided) return;
     inFlight = true;
     try {
       if (kind === 'approve') {

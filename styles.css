@@ -271,7 +271,18 @@ code, pre { font-family: Consolas, "Lucida Console", "Courier New", monospace; }
 .dec-approve:hover { border-color: var(--navy); box-shadow: inset 0 0 0 1px var(--navy); }
 .dec-approve .dec-title { color: var(--navy); }
 .dec-reject:hover { border-color: var(--line-strong); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.dec-card.is-selected { background: var(--box-bg); box-shadow: inset 0 0 0 2px var(--navy); border-color: var(--navy); }
+.dec-card.dec-reject.is-selected { box-shadow: inset 0 0 0 2px var(--ink-soft); border-color: var(--ink-soft); }
+.dec-title { display: flex; align-items: baseline; gap: 10px; }
+.dec-mark { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--navy); }
+.dec-hint { margin: 12px 0 0; font-size: 13px; color: var(--ink-faint); }
 @media (max-width: 600px) { .dec-cards { grid-template-columns: 1fr; } .db-row { flex-direction: column; gap: 4px; } .db-k { flex-basis: auto; } }
+
+/* SHOW-don't-tell concise captions (replaced the benefit tables) */
+.send-result { margin: 22px 0 0; font-size: 15px; line-height: 1.55; color: var(--ink); }
+.send-result code { font-family: Consolas, monospace; font-size: 13px; color: var(--ink);
+  background: var(--box-bg); border: 1px solid var(--box-border); border-radius: 3px; padding: 1px 6px; }
+.qa-caption { margin: 14px 0 22px; font-size: 15px; line-height: 1.55; color: var(--ink-soft); }
 .rsi:empty { display: none; }
 .msg { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; }
 .msg-ha { border-left: 3px solid var(--navy); background: var(--bg-alt); }
