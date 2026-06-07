@@ -184,22 +184,47 @@ code, pre { font-family: Consolas, "Lucida Console", "Courier New", monospace; }
 .ba td { padding: 10px 14px; border-bottom: 1px solid var(--line); }
 .ba-old { color: var(--ink-faint); text-decoration: line-through; text-decoration-color: var(--line-strong); }
 .ba-new { color: var(--ink); font-weight: 700; background: var(--bg-alt); }
-.chk-lead { margin-top: 40px; font-size: 22px; }
 
-.chk-pick { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 24px 0 0; }
-.chk-out:empty { display: none; }
-.chk-out { margin-top: 24px; }
-.chk-result { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; width: 100%; font-size: 20px;
-  border-radius: var(--radius); padding: 18px 20px; }
-.chk-pass { color: var(--green); background: var(--green-bg); border: 1px solid #bcdcbe; }
-.chk-fail { color: #fff; background: var(--red); border: 1px solid var(--red); }
-.chk-result strong { font-weight: 700; }
-.chk-vs, .chk-arrow { font-size: 15px; opacity: .8; }
-.chk-verdict { font-weight: 700; }
-.chk-point { margin: 14px 0 0; font-size: 15px; color: var(--ink); }
-.chk-point .link-btn { font-size: 14px; }
+/* ============ BEAT 3 — automatic conformance check ============ */
+.ev-sub { margin-top: 14px; }
+.ev-panel { margin: 26px 0 0; border: 1px solid var(--line-strong); border-radius: var(--radius); overflow: hidden; }
+.ev-head { display: flex; align-items: center; gap: 12px; padding: 12px 16px;
+  background: var(--bg-alt); border-bottom: 1px solid var(--line); }
+.ev-title { font-size: 13px; font-weight: 700; color: var(--ink); }
+.ev-batch { font-size: 12px; color: var(--ink-soft); }
+.ev-status { margin-left: auto; font-size: 12px; font-weight: 700; color: var(--navy); min-height: 15px; }
+.ev-row { display: grid; grid-template-columns: 1.1fr 1.7fr .6fr 34px; gap: 12px; align-items: center;
+  padding: 12px 16px; border-top: 1px solid var(--line); transition: background .25s ease, box-shadow .25s ease; }
+.ev-colhead { background: var(--bg); padding: 8px 16px; border-top: none; }
+.ev-colhead > div { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--ink-faint); }
+.ev-param { font-size: 14px; font-weight: 600; color: var(--ink); }
+.ev-crit { font-size: 13px; color: var(--ink-soft); }
+.ev-meas { font-size: 14px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
+.ev-verdict { text-align: center; font-size: 15px; }
+.ev-tick { color: var(--green); font-weight: 700; }
+.ev-cross { color: var(--red); font-weight: 700; }
+.ev-row.ev-pass { box-shadow: inset 3px 0 0 var(--green); }
+.ev-row.ev-fail { box-shadow: inset 3px 0 0 var(--red); background: var(--red-bg); }
+.ev-spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--line-strong);
+  border-top-color: var(--navy); border-radius: 50%; animation: ev-spin .7s linear infinite; }
+@keyframes ev-spin { to { transform: rotate(360deg); } }
 
-/* ====================== BEAT 3 — decision + AI ======================= */
+.ev-banner { margin: 18px 0 0; padding: 14px 18px; border-radius: var(--radius); font-size: 15px;
+  line-height: 1.5; border: 1px solid; }
+.ev-ok { background: var(--green-bg); border-color: #bcdcbe; }
+.ev-ok strong { color: var(--green); }
+.ev-bad { background: var(--red-bg); border-color: var(--red); }
+.ev-bad strong { color: var(--red); }
+.ev-bad-em { display: block; margin-top: 5px; font-size: 13px; color: var(--ink-soft); }
+@media (prefers-reduced-motion: reduce) { .ev-spin { animation-duration: 0s; } }
+@media (max-width: 600px) {
+  .ev-row { grid-template-columns: 1fr 34px; row-gap: 3px; }
+  .ev-crit { grid-column: 1; font-size: 12px; }
+  .ev-meas { grid-column: 1; }
+  .ev-verdict { grid-row: 1 / span 3; grid-column: 2; }
+}
+
+/* ====================== BEAT 4 — decision + AI ======================= */
 .decision-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 26px; }
 .rsi { margin-top: 22px; display: flex; flex-direction: column; gap: 12px; }
 .rsi:empty { display: none; }

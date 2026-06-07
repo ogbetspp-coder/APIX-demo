@@ -26,17 +26,19 @@
   /* ============================ STATE ==================================== */
   var BEATS = [
     { key: 1, label: 'The change' },
-    { key: 2, label: 'Send & check' },
-    { key: 3, label: 'Decision' }
+    { key: 2, label: 'Send via APIX' },
+    { key: 3, label: 'Auto-check' },
+    { key: 4, label: 'Decision' }
   ];
-  var beat = 1;                 // 1 | 2 | 3
+  var beat = 1;                 // 1 | 2 | 3 | 4
   var doneBeat = {};            // beat number -> true when completed
   var inFlight = false;         // a handler is awaiting (guards double-clicks)
 
   var changeView = 'document';  // 'document' | 'data' (Beat 1 toggle)
   var sent = false;             // the submit chain has completed (Beat 2)
-  var batchKey = 'good';        // 'good' | 'bad' — the tested batch
-  var batchChecked = false;     // a batch check has been run
+  var batchKey = 'good';        // 'good' | 'bad' — the screened batch
+  var batchChecked = false;     // the auto-check has completed at least once
+  var checkDone = false;        // the current evaluation has finished (verdict shown)
   var infoAsked = false;        // an Information Request round was opened
   var decided = null;           // 'approve' | 'reject'
   var aiRun = false;            // the AI assessment has been streamed
@@ -81,6 +83,7 @@
     if (beat === 1) return renderBeat1();
     if (beat === 2) return renderBeat2();
     if (beat === 3) return renderBeat3();
+    if (beat === 4) return renderBeat4();
   }
 
   /* ----------------------- BEAT 1 — The change ------------------------- */
@@ -173,38 +176,77 @@
   }
 
   function renderBeat2() {
-    var w = batchChecked ? waterCheck() : null;
-    var resultHtml = '';
-    if (batchChecked && w) {
-      var pass = w.pass;
-      resultHtml = '<div class="chk-result ' + (pass ? 'chk-pass' : 'chk-fail') + '">' +
-          'Batch measured <strong>' + esc(w.measured) + '</strong>' +
-          '<span class="chk-vs">vs</span>limit <strong>' + esc(proposedLimit()) + '</strong>' +
-          '<span class="chk-arrow">→</span>' +
-          (pass ? '<span class="chk-verdict">✓ Within the limit</span>'
-                : '<span class="chk-verdict">✗ Exceeds the limit</span>') +
-        '</div>' +
-        '<p class="chk-point">No one re-typed anything — the computer compared the batch’s data to the limit. ' +
-          '<button class="link-btn" data-inspect="batch">see the check { }</button></p>';
-    }
-
     el('beat').innerHTML =
       exchangeShell(sent, sent) +
       apixStoryHtml() +
-      '<h2 class="b-head chk-lead">And because it’s data, FDA’s system checks a real batch — automatically.</h2>' +
-      '<div class="chk-pick">' +
-        '<button class="pick-opt' + (batchKey === 'good' ? ' on' : '') + '" data-batch="good">Representative batch</button>' +
-        '<button class="pick-opt' + (batchKey === 'bad' ? ' on' : '') + '" data-batch="bad">Out-of-spec batch</button>' +
-        '<button class="btn-ghost" data-act="run-check">Run check</button>' +
-      '</div>' +
-      '<div class="chk-out">' + resultHtml + '</div>' +
       '<div class="b-controls">' +
-        '<button class="btn-primary" data-act="to-decision"' + (batchChecked ? '' : ' disabled') + '>FDA decides →</button>' +
+        '<button class="btn-primary" data-act="to-check">See FDA’s system read it →</button>' +
       '</div>';
   }
 
-  /* ----------------------- BEAT 3 — Decision + AI ---------------------- */
+  /* ----------------------- BEAT 3 — the automatic check ---------------- */
+  /* The strongest proof of why structured data matters: the moment the batch
+     data lands, FDA's system evaluates the WHOLE finished-product specification
+     against the real acceptance criteria — streaming a verdict per parameter and
+     flagging any drift instantly. Auto-runs on entry; one narrative control. */
+  function evalRowsHtml(key, resolved) {
+    return APIX.pqi.validate(key).map(function (r, i) {
+      var done = resolved === 'all' || i < resolved;
+      var cls = done ? (r.pass ? ' ev-pass' : ' ev-fail') : '';
+      var v = !done ? '<span class="ev-spin"></span>'
+                    : (r.pass ? '<span class="ev-tick">✓</span>' : '<span class="ev-cross">✗</span>');
+      return '<div class="ev-row' + cls + '" id="ev-row-' + i + '">' +
+        '<div class="ev-param">' + esc(r.test) + '</div>' +
+        '<div class="ev-crit">' + esc(r.criterion) + '</div>' +
+        '<div class="ev-meas">' + esc(r.measured) + '</div>' +
+        '<div class="ev-verdict">' + v + '</div></div>';
+    }).join('');
+  }
+
+  function verdictHtml(key) {
+    var rows = APIX.pqi.validate(key);
+    var fail = rows.filter(function (r) { return !r.pass; });
+    if (!fail.length) {
+      return '<div class="ev-banner ev-ok"><strong>Batch conforms.</strong> ' +
+        'All ' + rows.length + ' limits met — cleared for assessment automatically, the instant the data arrived.</div>';
+    }
+    var f = fail[0];
+    return '<div class="ev-banner ev-bad"><strong>Non-conformance flagged.</strong> ' +
+      esc(f.test.replace(/\s*\(.*\)/, '')) + ' measured ' + esc(f.measured) + ', outside the ' +
+      esc(f.criterion.replace(/\s*w\/w$/, '')) + ' limit.' +
+      '<span class="ev-bad-em">Caught the moment the data arrived — not left in a PDF for a reviewer to spot.</span></div>';
+  }
+
   function renderBeat3() {
+    var isBad = batchKey === 'bad';
+    var switchBtn = checkDone
+      ? '<button class="btn-ghost" data-act="switch">' +
+          (isBad ? '← Back to the conforming batch' : 'Now screen an out-of-spec batch →') + '</button>'
+      : '';
+    var nextBtn = '<button class="btn-primary" data-act="to-decision"' +
+      (checkDone ? '' : ' disabled') + '>FDA decides →</button>';
+
+    el('beat').innerHTML =
+      '<div class="actor">FDA · automated screening</div>' +
+      '<h2 class="b-head">The instant the data lands, FDA’s system checks every limit.</h2>' +
+      '<p class="b-why ev-sub">The submitted specification and the batch’s results are both structured data, ' +
+        'so the system compares them itself — no reviewer re-typing values or cross-reading a PDF. ' +
+        '<button class="link-btn" data-inspect="batch">see the acceptance criteria { }</button></p>' +
+      '<div class="ev-panel">' +
+        '<div class="ev-head"><span class="ev-title">Finished-product specification</span>' +
+          '<span class="ev-batch">' + esc(batchLabel()) + '</span>' +
+          '<span class="ev-status" id="ev-status">' + (checkDone ? '' : 'Evaluating…') + '</span></div>' +
+        '<div class="ev-row ev-colhead"><div class="ev-param">Parameter</div>' +
+          '<div class="ev-crit">Acceptance criterion</div><div class="ev-meas">Batch result</div>' +
+          '<div class="ev-verdict"></div></div>' +
+        evalRowsHtml(batchKey, checkDone ? 'all' : 0) +
+      '</div>' +
+      (checkDone ? verdictHtml(batchKey) : '') +
+      '<div class="b-controls">' + switchBtn + nextBtn + '</div>';
+  }
+
+  /* ----------------------- BEAT 4 — Decision + AI ---------------------- */
+  function renderBeat4() {
     var convo = infoAsked ? rsiHtml() : '';
     var payoff = decided ? payoffHtml() : '';
     var decisionBlock = decided ? '' :
@@ -221,6 +263,7 @@
       decisionBlock + payoff +
       aiPanelHtml();
   }
+  /* Beat 4 dispatch alias kept distinct from the auto-check (Beat 3). */
 
   /* The two-message Information Request exchange (real engine text). */
   function rsiHtml() {
@@ -290,20 +333,14 @@
   async function runAct(actKey) {
     if (inFlight) return;
     if (actKey === 'send')        return doSend();
-    if (actKey === 'run-check')   return doRunCheck();
+    if (actKey === 'to-check')    return doToCheck();
+    if (actKey === 'switch')      return doSwitchBatch();
     if (actKey === 'to-decision') return doToDecision();
     if (actKey === 'answer')      return doAnswer();
     if (actKey === 'ai')          return runAi();
   }
 
   function setView(v) { if (inFlight) return; changeView = v; renderBeat1(); }
-
-  function setBatch(key) {
-    if (inFlight) return;
-    batchKey = key;
-    batchChecked = false;
-    renderBeat2();
-  }
 
   /* --- Beat 1 → 2: the REAL submit chain, then the received/checked exchange. */
   async function doSend() {
@@ -353,44 +390,80 @@
     }
   }
 
-  /* --- Beat 2: run the batch check (real Task → under-assessment, local compare). */
-  async function doRunCheck() {
-    inFlight = true; renderBeat2();
+  /* --- Beat 2 → 3: advance the real Task to under-assessment, then evaluate. */
+  async function doToCheck() {
+    doneBeat[2] = true;
+    beat = 3;
+    batchKey = 'good';                 // open on the representative batch
+    inFlight = true;
+    renderCrumb();
     try {
       await store.updateTask({ type: 'updateTask', status: 'in-progress', businessStatus: 'under-assessment' });
     } catch (e) { /* the comparison itself is local */ }
-    batchChecked = true;
-    inFlight = false;
-    renderBeat2();
+    await runEval();
+  }
+
+  /* Stream a verdict per parameter against the real acceptance criteria. */
+  async function runEval() {
+    inFlight = true;
+    checkDone = false;
+    renderBeat3();                      // skeleton: spinners + "Evaluating…"
+    var rows = APIX.pqi.validate(batchKey);
+    if (reduced()) {
+      checkDone = true; batchChecked = true; inFlight = false; renderBeat3(); return;
+    }
+    await delay(440);
+    for (var i = 0; i < rows.length; i++) {
+      var row = el('ev-row-' + i);
+      if (row) {
+        row.classList.add(rows[i].pass ? 'ev-pass' : 'ev-fail');
+        var v = row.querySelector('.ev-verdict');
+        if (v) v.innerHTML = rows[i].pass ? '<span class="ev-tick">✓</span>' : '<span class="ev-cross">✗</span>';
+      }
+      var stat = el('ev-status');
+      if (stat) stat.textContent = 'Checking ' + (i + 1) + ' of ' + rows.length + '…';
+      await delay(autoCheckPause(rows[i]));
+    }
+    await delay(340);
+    checkDone = true; batchChecked = true; inFlight = false;
+    renderBeat3();                      // verdict banner + enabled controls
+  }
+  /* Linger a touch longer on a failing row so the room registers the catch. */
+  function autoCheckPause(r) { return r.pass ? 460 : 760; }
+
+  async function doSwitchBatch() {
+    if (inFlight) return;
+    batchKey = (batchKey === 'good') ? 'bad' : 'good';
+    await runEval();
   }
 
   function doToDecision() {
-    doneBeat[2] = true;
-    beat = 3;
+    doneBeat[3] = true;
+    beat = 4;
     render();
   }
 
-  /* --- Beat 3: FDA decision. --- */
+  /* --- Beat 4: FDA decision. --- */
   async function onDecision(kind) {
-    if (inFlight || beat !== 3 || decided) return;
+    if (inFlight || beat !== 4 || decided) return;
     if (kind === 'info' && infoAsked) return;
     inFlight = true;
     try {
       if (kind === 'approve') {
         await store.updateTask({ type: 'updateTask', status: 'completed', businessStatus: 'approved', taskCode: 'approval', addOutputs: ['approval', 'assessment'] });
         decided = 'approve';
-        doneBeat[3] = true;
+        doneBeat[4] = true;
       } else if (kind === 'reject') {
         await store.updateTask({ type: 'updateTask', status: 'completed', businessStatus: 'rejected', taskCode: 'rejection', addOutputs: ['rejection'], statusReason: 'Complete Response: the tested batch did not meet the proposed limit.' });
         decided = 'reject';
-        doneBeat[3] = true;
+        doneBeat[4] = true;
       } else if (kind === 'info') {
         await store.updateTask({ type: 'updateTask', status: 'on-hold', businessStatus: 'clock-stop', taskCode: 'information-request' });
         infoAsked = true;
       }
     } catch (e) { /* surface stays usable */ }
     inFlight = false;
-    renderBeat3();
+    renderBeat4();
   }
 
   async function doAnswer() {
@@ -401,7 +474,7 @@
       doneBeat.answered = true;
     } catch (e) { /* keep going */ }
     inFlight = false;
-    renderBeat3();
+    renderBeat4();
   }
 
   /* --- The AI demo: stream the data-derived assessment, word by word. --- */
@@ -728,7 +801,7 @@
   function resetAll() {
     beat = 1; doneBeat = {}; inFlight = false;
     changeView = 'document'; sent = false;
-    batchKey = 'good'; batchChecked = false; infoAsked = false; decided = null; aiRun = false;
+    batchKey = 'good'; batchChecked = false; checkDone = false; infoAsked = false; decided = null; aiRun = false;
     reached = {}; lastNotif = null; ioEntries = []; auditEntries = [];
     store.reset();
     renderAudit();
@@ -830,7 +903,6 @@
     if (ev.target.closest('#wl-decode')) { decodeWrapperBinary(); return; }
     var ins = ev.target.closest('[data-inspect]'); if (ins) { inspectKey(ins.getAttribute('data-inspect')); return; }
     var vw = ev.target.closest('[data-view]'); if (vw) { setView(vw.getAttribute('data-view')); return; }
-    var b = ev.target.closest('[data-batch]'); if (b) { setBatch(b.getAttribute('data-batch')); return; }
     var dec = ev.target.closest('[data-decision]'); if (dec) { onDecision(dec.getAttribute('data-decision')); return; }
     var a = ev.target.closest('[data-act]'); if (a) { runAct(a.getAttribute('data-act')); return; }
   });
