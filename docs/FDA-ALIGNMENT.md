@@ -28,7 +28,7 @@ FHIR, aligned with what you've already shipped"* — never as "FDA's plan."
 |---|---|---|
 | **PQ-CMC FHIR IG** (FDA-funded, R5, Module 3) | "Same FHIR R5, same BR&R work group, same structured-spec model as FDA's own IG." Velexa = **SODF → in scope.** | STU2 / draft |
 | **KASA** | "Our structured `PlanDefinition`+`ObservationDefinition` spec is the structured input KASA consumes." | **Production (SODF)** |
-| **ICH Q12 Established Conditions** | "Our Water-Content variation is a *computable* EC change — old range → new range on a named test." | Final guidance |
+| **ICH Q12 Established Conditions** | "Our new NDSRI limit is a *computable* EC change — a named, coded test whose limit is *derived* from AI ÷ MDD, not transcribed." | Final guidance |
 | **IDMP guidance / SPL / GSRS / openFDA** | "PQI is the FHIR-native expression of product/substance data FDA already standardizes." | Production |
 | **TMAP/DMAP/EMAP** | "APIX-over-FHIR = the 'external data interfaces / industry standards / interoperable' posture FDA committed to." | Published plans |
 | **BEST + Apr-2025 FHIR docket** | "FHIR for regulatory data isn't hypothetical at FDA." | Pilot / exploratory |

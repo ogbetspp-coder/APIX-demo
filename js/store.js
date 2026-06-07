@@ -34,14 +34,15 @@ APIX.OUTPUTS = {
  * change): FDA's quality/CMC question and the sponsor's response — surfaced as a
  * genuine quick back-and-forth on the FDA⇄sponsor channel. */
 APIX.RSI = {
-  question: 'Quality (CMC). Justify the proposed tightening of the end-of-shelf-life Water Content acceptance ' +
-    'criterion (2.0% → 1.5% w/w) and confirm it is supported by the available long-term stability data. Confirm the ' +
-    'analytical procedure (Karl Fischer, USP <921>) remains validated for the revised limit and clarify any impact on ' +
-    'the approved shelf life.',
-  answer: 'The revised 1.5% w/w end-of-shelf-life limit is supported by 36-month long-term stability data on three ' +
-    'production-scale batches (maximum observed 1.2% w/w). The change tightens the criterion and does not affect the ' +
-    'approved 36-month shelf life. Water Content is determined by Karl Fischer titration (USP <921>), validated per ' +
-    'ICH Q2(R2); no method change is required.'
+  question: 'Quality (CMC). Justify the proposed N-nitroso-velexate (NDSRI) acceptance criterion of NMT 0.29 ppm. ' +
+    'Confirm the derivation of the acceptable intake (AI) and how the limit follows from AI ÷ maximum daily dose, ' +
+    'confirm the LC-MS/MS procedure is validated to the limit, and confirm long-term stability supports the limit ' +
+    'through the approved shelf life.',
+  answer: 'The 0.29 ppm limit is computed from an acceptable intake of 100 ng/day (CPCA Category 2 for ' +
+    'N-nitroso-velexate) divided by the 350 mg/day maximum daily dose (2 × 175 mg) — i.e. 100 ÷ 350 = 0.29 ppm. ' +
+    'The confirmatory LC-MS/MS procedure is validated to 0.06 ppm (LOQ), well below the limit. 36-month long-term ' +
+    'stability on three production-scale batches shows a maximum of 0.12 ppm, supporting the limit through the ' +
+    'approved 36-month shelf life.'
 };
 
 /* v3 terminology systems used by Provenance.activity + agent.type. */
@@ -268,7 +269,7 @@ APIX.store = {
   /* ---- WS1: structured-spec integrity (sign / verify / tamper) --------- */
   // The Bundle the regulator currently holds — pristine, or the tampered copy.
   currentSpecBundle: function () { return this.tampered ? this.tamperedBundle : this.signedBundle; },
-  // Toggle a single-field alteration of the signed spec (the Water Content limit).
+  // Toggle a single-field alteration of the signed spec (the NDSRI limit).
   setTampered: function (on) {
     this.tampered = !!on;
     if (on && !this.tamperedBundle && window.APIX && APIX.sign && this.signedBundle) {
@@ -507,7 +508,7 @@ APIX.store = {
       meta: { versionId: '1', lastUpdated: now, profile: [APIX.SYS.profile.task] },
       text: {
         status: 'generated',
-        div: '<div xmlns="http://www.w3.org/1999/xhtml">Prior Approval Supplement: tightening of the end-of-shelf-life Water Content limit for ' +
+        div: '<div xmlns="http://www.w3.org/1999/xhtml">Prior Approval Supplement: new N-nitroso-velexate (NDSRI) limit and LC-MS/MS test for ' +
           APIX.seed.product.name[0].productName + '.</div>'
       },
       identifier: [{ use: 'official', type: { coding: [{ system: APIX.SYS.idType, code: 'apixtaskinstance', display: 'APIX Task Instance ID' }] }, system: APIX.SYS.taskIdSystem, value: APIX.TASK_UUID }],

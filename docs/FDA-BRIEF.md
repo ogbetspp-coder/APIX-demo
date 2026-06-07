@@ -6,10 +6,11 @@ content (**PQI**, HL7 `uv-dx-pq`) carried by an **API-first FHIR R5 transport**
 status tracking. It runs on a real **HAPI FHIR R5** server and its resources pass
 the **official HL7 FHIR Validator** against the APIX + PQI IGs.
 
-**The scenario.** A Type IB post-approval variation to a finished-product
-specification (tighten end-of-shelf-life Water Content 2.0%→1.5%) for a
+**The scenario.** A US **Prior Approval Supplement** to a finished-product
+specification (add an **N-nitroso-velexate (NDSRI)** limit + LC-MS/MS test) for a
 solid-oral-dose tablet — i.e., a **computable ICH Q12 Established-Condition
-change** (old range → new range on a named, coded test).
+change** where the limit is **derived** from acceptable intake (100 ng/day) ÷
+maximum daily dose (350 mg/day) = 0.29 ppm — a calculation a PDF cannot do.
 
 **Approach — two complementary halves.**
 - **PQI / PQ-CMC = content.** The spec is a FHIR `PlanDefinition` + `ObservationDefinition`s (test · method · acceptance criterion), rendered both as an eCTD 3.2.P.5.1 document and as the structured Bundle.
@@ -18,7 +19,7 @@ change** (old range → new range on a named, coded test).
 **Where it fits at FDA (alignment, not endorsement).**
 - **PQ-CMC FHIR IG** (FDA-funded, R5, eCTD Module 3, *solid-oral-dose scope*) — our product is in scope; same FHIR version and HL7 BR&R work group. *(STU/draft, voluntary.)*
 - **KASA** (CDER/OPQ, **in production** for generic SODF) — structured specs are the kind of input structured assessment consumes.
-- **ICH Q12** (final FDA guidance) — the variation is an Established-Condition change.
+- **ICH Q12** (final FDA guidance) — the new NDSRI limit is an Established-Condition change.
 - **IDMP guidance (2023), SPL, GSRS/UNII, openFDA** — PQI is a FHIR-native expression of product/substance data FDA already standardizes.
 - **TMAP/DMAP/EMAP** — APIX-over-FHIR matches FDA's stated commitments to "external data interfaces," "industry standards," and "interoperable" exchange.
 - **ESG NextGen** (REST submit/status/acknowledge, 2025) — APIX is a FHIR-native rendering of that submit-and-track pattern. **eCTD v4.0** two-way (agency→sponsor) communication is a *planned* phase; the demo's question loop models it.

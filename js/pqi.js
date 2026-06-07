@@ -7,8 +7,11 @@
  *
  * Story: spec data is scattered across mocked source systems; we normalise it to
  * the PQI schema, then render it BOTH as a human eCTD 3.2.P.5.1 PDF and as the
- * structured FHIR Bundle. The variation being submitted = tightening the
- * end-of-shelf-life Water Content limit (2.0% -> 1.5% w/w).
+ * structured FHIR Bundle. The variation being submitted = establishing an
+ * N-nitroso-velexate (NDSRI) acceptance criterion and adding a confirmatory
+ * LC-MS/MS test, filed as a US Prior Approval Supplement. The limit is not typed
+ * in — it is COMPUTED: limit (ppm) = acceptable intake (ng/day) ÷ max daily dose
+ * (mg/day), a calculation a PDF cannot do but structured data does for free.
  *
  * NOTE: criteria are adapted from the published uv-dx-pq example
  * (bundle-drug-product-specification-pq-ex1) for an illustrative, legible demo.
@@ -21,50 +24,60 @@ APIX.pqi = (function () {
   var TEXT_EXT = PQ + '/StructureDefinition/Extension-qualified-value-text-pq';
   var BUNDLE_PROFILE = PQ + '/StructureDefinition/Bundle-drug-product-specification-pq';
 
+  /* The nitrosamine (NDSRI) limit is DERIVED, per FDA's nitrosamine guidance:
+     limit (ppm) = AI (ng/day) ÷ MDD (mg/day). 1 ppm = 1 ng/mg.
+       AI  = 100 ng/day  — CPCA Category 2 for N-nitroso-velexate
+       MDD = 350 mg/day  — 2 × 175 mg tablets (label max daily dose)            */
+  var NDSRI = { ai: 100, mdd: 350, dp: 2 };
+  NDSRI.limit = +(NDSRI.ai / NDSRI.mdd).toFixed(NDSRI.dp);   // = 0.29 ppm (computed)
+
   /* The regulatory change carried by this variation. */
   var CHANGE = {
-    test: 'WaterContent',
-    label: 'End-of-shelf-life Water Content limit',
-    before: 'NMT 2.0% w/w',
-    after: 'NMT 1.5% w/w',
-    rationale: 'Tightened on updated 36-month stability data; a stability-indicating limit, filed as a Prior Approval Supplement to the NDA.'
+    test: 'NDSRI',
+    label: 'New N-nitroso-velexate (NDSRI) limit + LC-MS/MS test',
+    before: '— (not in current specification)',
+    after: 'NMT ' + NDSRI.limit.toFixed(NDSRI.dp) + ' ppm',
+    rationale: 'A new coded acceptance criterion added per the nitrosamine risk assessment; the limit is computed from the acceptable intake (' +
+      NDSRI.ai + ' ng/day, CPCA Category 2) ÷ the maximum daily dose (' + NDSRI.mdd + ' mg/day). Filed as a Prior Approval Supplement (21 CFR 314.70(b)) to the NDA.'
   };
 
-  /* ---- Mocked source systems (heterogeneous, "messy") ------------------- */
+  /* ---- Mocked source systems (heterogeneous, "messy") -------------------
+     Each system earns its place: it contributes a DISTINCT part of the spec.   */
   var sources = [
-    {
-      system: 'LIMS — QC Specification export',
-      tag: 'CSV',
-      note: 'Release limits, lab shorthand',
-      rows: [
-        'DESCR | visual        | orange FC tab, deb. "175"',
-        'IDT   | UHPLC         | RT + UV vs ref. std',
-        'ASSAY | UHPLC         | 95-105 %LC',
-        'DISSO | App2/UV       | Q=80% @ 30 min',
-        'WATER | KF, USP<921>  | NMT 1.0% (release)',
-        'DEGPR | UHPLC         | tot NMT 1.4% (release)'
-      ]
-    },
-    {
-      system: 'Stability System — shelf-life limits',
-      tag: 'XML',
-      note: 'End-of-shelf-life, 36-month data',
-      rows: [
-        'WATER  shelf-life : NMT 1.5%   ← updated',
-        'DEGPR  shelf-life : tot NMT 2.3%',
-        'ASSAY  shelf-life : as release',
-        'DISSO  shelf-life : as release'
-      ]
-    },
     {
       system: 'Analytical Method Repository',
       tag: 'REST',
-      note: 'Validated method descriptions',
+      role: 'the new test + acceptance criterion',
+      note: 'Validated LC-MS/MS method + the NDSRI limit, derived from AI ÷ MDD',
       rows: [
-        'M-001  Assay by UHPLC',
-        'M-014  Apparatus 2 (paddles), UV measurement',
-        'M-022  Degradation products by UHPLC',
-        'USP <921> (water) · Ph Eur (micro)'
+        'M-031  N-nitroso-velexate by LC-MS/MS',
+        'AI  = 100 ng/day   (CPCA Category 2)',
+        'MDD = 350 mg/day   (2 × 175 mg)',
+        'limit = AI ÷ MDD = 0.29 ppm'
+      ]
+    },
+    {
+      system: 'Stability System — shelf-life data',
+      tag: 'XML',
+      role: 'the shelf-life justification',
+      note: '36-month data: N-nitroso-velexate stays within the limit through shelf life',
+      rows: [
+        'NDSRI   0m : 0.08 ppm',
+        'NDSRI  12m : 0.10 ppm',
+        'NDSRI  24m : 0.12 ppm',
+        'NDSRI  36m : 0.12 ppm    ≤ 0.29 ✓'
+      ]
+    },
+    {
+      system: 'LIMS — QC batch release',
+      tag: 'CSV',
+      role: 'the tested-batch result',
+      note: 'Measured values for the batch screened against the spec',
+      rows: [
+        'ASSAY  99.0 %LC',
+        'DISSO  Q = 86% @ 30 min',
+        'WATER  1.8 % (shelf-life)',
+        'NDSRI  0.45 ppm    → exceeds 0.29 ✗'
       ]
     }
   ];
@@ -96,12 +109,23 @@ APIX.pqi = (function () {
         { appliesTo: 'Total degradation products', high: 2.3 } ] } },
     { code: 'WaterContent', display: 'Water Content', method: 'USP <921>',
       release: { ranges: [{ high: 1.0 }] },
-      shelfLife: { ranges: [{ high: 1.5 }] },               // <-- the variation (was 2.0)
-      changed: true, beforeShelfLife: 'NMT 2.0% w/w' },
+      shelfLife: { ranges: [{ high: 2.0 }] } },
+    { code: 'NDSRI', display: 'N-Nitroso-velexate (NDSRI)', method: 'LC-MS/MS',
+      system: 'http://synthpharma.example/fhir/CodeSystem/velexa-local-tests',   // sponsor-local: a new test not in the PQI example CS
+      unit: 'ppm', dp: NDSRI.dp, ai: NDSRI.ai, mdd: NDSRI.mdd, computed: true,
+      release: { ranges: [{ high: NDSRI.limit, unit: 'ppm', dp: NDSRI.dp }] },
+      shelfLife: { ranges: [{ high: NDSRI.limit, unit: 'ppm', dp: NDSRI.dp }] },
+      changed: true, added: true, beforeShelfLife: '— (not specified)' },   // <-- the variation: a NEW coded test
     { code: 'Microbiological Quality', display: 'Microbiological Quality', method: 'Ph Eur',
       release: { text: 'Shall comply with the requirements of the Ph Eur' },
       shelfLife: { text: 'Shall comply with the requirements of the Ph Eur' } }
   ];
+
+  /* Format a numeric high limit with its unit ('% w/w' default, or 'ppm'). */
+  function fmtLimit(high, unit, dp) {
+    dp = (dp == null) ? 1 : dp;
+    return unit === 'ppm' ? 'NMT ' + high.toFixed(dp) + ' ppm' : 'NMT ' + high.toFixed(dp) + '% w/w';
+  }
 
   /* Render an acceptance criterion (release or shelfLife) as readable text. */
   function criterionText(c) {
@@ -109,7 +133,7 @@ APIX.pqi = (function () {
     if (c.text) return c.text;
     if (c.ranges) {
       return c.ranges.map(function (r) {
-        return (r.appliesTo ? r.appliesTo + ': ' : '') + 'NMT ' + r.high.toFixed(1) + '% w/w';
+        return (r.appliesTo ? r.appliesTo + ': ' : '') + fmtLimit(r.high, r.unit, r.dp);
       }).join('; ');
     }
     return '—';
@@ -129,7 +153,7 @@ APIX.pqi = (function () {
       url: CANON_BASE + '/ObservationDefinition/' + uuid,
       title: test.display,
       status: 'active',
-      code: { coding: [{ system: LOCAL_CS, code: test.code, display: test.display }], text: test.display }
+      code: { coding: [{ system: test.system || LOCAL_CS, code: test.code, display: test.display }], text: test.display }
     };
     if (timing === 'release' || !test.shelfLife.text || test.shelfLife.text !== 'As for release' || test.changed) {
       od.method = { text: test.method };
@@ -138,7 +162,7 @@ APIX.pqi = (function () {
       od.qualifiedValue = [{ extension: [{ url: TEXT_EXT, valueString: c.text }] }];
     } else if (c.ranges) {
       od.qualifiedValue = c.ranges.map(function (r) {
-        var qv = { range: { high: { value: r.high, unit: '% w/w' } } };
+        var qv = { range: { high: { value: r.high, unit: r.unit || '% w/w' } } };
         if (r.appliesTo) qv.appliesTo = [{ text: r.appliesTo }];
         return qv;
       });
@@ -266,6 +290,7 @@ APIX.pqi = (function () {
         release: criterionText(t.release),
         shelfLife: criterionText(t.shelfLife),
         changed: !!t.changed,
+        added: !!t.added,
         before: t.beforeShelfLife || null
       };
     });
@@ -274,9 +299,14 @@ APIX.pqi = (function () {
   /* Render the human-readable eCTD 3.2.P.5.1 "PDF" view (HTML). */
   function renderSpecHtml() {
     var rows = specRows().map(function (r) {
-      var shelf = r.changed
-        ? '<span class="diff-old">' + r.before + '</span> <span class="diff-new">' + r.shelfLife + ' w/w</span>'
-        : r.shelfLife;
+      var shelf;
+      if (r.added) {
+        shelf = '<span class="diff-new">' + r.shelfLife + '</span> <span class="row-badge">NEW</span>';
+      } else if (r.changed) {
+        shelf = '<span class="diff-old">' + r.before + '</span> <span class="diff-new">' + r.shelfLife + '</span>';
+      } else {
+        shelf = r.shelfLife;
+      }
       return '<tr' + (r.changed ? ' class="row-changed"' : '') + '>' +
         '<td>' + r.test + '</td><td>' + r.method + '</td>' +
         '<td>' + r.release + '</td><td>' + shelf + '</td></tr>';
@@ -289,8 +319,8 @@ APIX.pqi = (function () {
         '<table class="ectd-table"><thead><tr><th>Test</th><th>Analytical Method</th>' +
           '<th>Acceptance Criteria (Release)</th><th>Acceptance Criteria (Shelf Life)</th></tr></thead>' +
           '<tbody>' + rows + '</tbody></table>' +
-        '<p class="ectd-foot">Change in this submission: ' + CHANGE.label + ' — ' +
-          CHANGE.before + ' → <strong>' + CHANGE.after + '</strong>. ' + CHANGE.rationale + '</p>' +
+        '<p class="ectd-foot">Change in this submission: <strong>' + CHANGE.label + '</strong> — new acceptance criterion <strong>' +
+          CHANGE.after + '</strong>. ' + CHANGE.rationale + '</p>' +
       '</div>';
   }
 
@@ -305,7 +335,8 @@ APIX.pqi = (function () {
       label: 'Batch VX-2026-007 (representative)',
       values: {
         DESC: 'conforms', IDT: 'conforms', ASSAY: 99.2, Dissolution: 88,
-        WaterContent: 1.3,                         // end-of-shelf-life, ≤ 1.5% ✓
+        WaterContent: 1.3,
+        NDSRI: 0.12,                               // ≤ 0.29 ppm ✓
         'Microbiological Quality': 'conforms',
         DGP: { 'Total degradation products': 1.9, 'Individual unspecified': 0.3 }
       }
@@ -314,7 +345,8 @@ APIX.pqi = (function () {
       label: 'Batch VX-2026-011 (out-of-spec)',
       values: {
         DESC: 'conforms', IDT: 'conforms', ASSAY: 99.0, Dissolution: 86,
-        WaterContent: 1.8,                         // end-of-shelf-life, > 1.5% ✗  (the breach)
+        WaterContent: 1.8,                         // ≤ 2.0% w/w ✓
+        NDSRI: 0.45,                               // > 0.29 ppm ✗  (the breach)
         'Microbiological Quality': 'conforms',
         DGP: { 'Total degradation products': 2.0, 'Individual unspecified': 0.3 }
       }
@@ -327,7 +359,8 @@ APIX.pqi = (function () {
     { code: 'ASSAY',        timing: 'release',   label: 'Assay (release)' },
     { code: 'Dissolution',  timing: 'release',   label: 'Dissolution (release)' },
     { code: 'WaterContent', timing: 'shelfLife', label: 'Water Content (end of shelf life)' },
-    { code: 'DGP',          timing: 'shelfLife', label: 'Total Degradation Products (shelf life)' }
+    { code: 'DGP',          timing: 'shelfLife', label: 'Total Degradation Products (shelf life)' },
+    { code: 'NDSRI',        timing: 'shelfLife', label: 'N-Nitroso-velexate (NDSRI)' }
   ];
 
   function findTest(code) {
@@ -345,7 +378,7 @@ APIX.pqi = (function () {
       var r = test.impurity
         ? (function () { for (var i = 0; i < c.ranges.length; i++) if (c.ranges[i].appliesTo === 'Total degradation products') return c.ranges[i]; return c.ranges[0]; })()
         : c.ranges[0];
-      return { kind: 'range', high: r.high, appliesTo: r.appliesTo || null };
+      return { kind: 'range', high: r.high, appliesTo: r.appliesTo || null, unit: r.unit || '% w/w', dp: (r.dp == null ? 1 : r.dp) };
     }
     return null;
   }
@@ -367,8 +400,10 @@ APIX.pqi = (function () {
       } else {
         // numeric range → compare measured value to the high limit.
         var val = test.impurity && raw && typeof raw === 'object' ? raw['Total degradation products'] : raw;
-        criterion = '≤ ' + lim.high.toFixed(1) + '% w/w';
-        measured = (typeof val === 'number') ? val.toFixed(1) + '%' : String(val);
+        var unit = lim.unit || '% w/w', dp = (lim.dp == null ? 1 : lim.dp);
+        var suffix = (unit === 'ppm') ? ' ppm' : '% w/w', mSuffix = (unit === 'ppm') ? ' ppm' : '%';
+        criterion = '≤ ' + lim.high.toFixed(dp) + suffix;
+        measured = (typeof val === 'number') ? val.toFixed(dp) + mSuffix : String(val);
         pass = (typeof val === 'number') ? (val <= lim.high + 1e-9) : true;
       }
       return { test: chk.label, criterion: criterion, measured: measured, pass: pass };
@@ -376,7 +411,7 @@ APIX.pqi = (function () {
   }
 
   return {
-    sources: sources, tests: tests, CHANGE: CHANGE, bundle: null, batches: batches,
+    sources: sources, tests: tests, CHANGE: CHANGE, ndsri: NDSRI, bundle: null, batches: batches,
     normalize: normalize, specRows: specRows, criterionText: criterionText,
     renderSpecHtml: renderSpecHtml, validate: validate
   };

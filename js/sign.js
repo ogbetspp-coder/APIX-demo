@@ -93,17 +93,17 @@
   }
 
   /* Produce a tampered copy of the Bundle: alter the one signed field that
-     matters — the end-of-shelf-life Water Content limit (1.5 → 2.5 % w/w). */
+     matters — the N-nitroso-velexate (NDSRI) limit, widened 0.29 → 0.50 ppm. */
   function tamper(bundle) {
     var clone = JSON.parse(JSON.stringify(bundle));
     var hit = null;
     (function walk(o) {
       if (!o || typeof o !== 'object') return;
-      if (!Array.isArray(o) && o.range && o.range.high && o.range.high.value === 1.5 && !hit) hit = o.range.high;
+      if (!Array.isArray(o) && o.range && o.range.high && o.range.high.unit === 'ppm' && !hit) hit = o.range.high;
       Object.keys(o).forEach(function (k) { walk(o[k]); });
     })(clone);
     var info = null;
-    if (hit) { info = { field: 'Water Content (end of shelf life) limit', from: hit.value + ' % w/w', to: '2.5 % w/w' }; hit.value = 2.5; }
+    if (hit) { info = { field: 'N-Nitroso-velexate (NDSRI) limit', from: hit.value + ' ppm', to: '0.50 ppm' }; hit.value = 0.50; }
     return { bundle: clone, info: info };
   }
 

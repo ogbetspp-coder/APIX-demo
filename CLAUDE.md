@@ -7,9 +7,10 @@ A self-contained, browser-based demo for an HL7 **Vulcan** talk that makes one
 idea crystal clear: **PQI** (HL7 `uv-dx-pq`, Pharmaceutical Quality) authors
 structured medicinal-product **content**; **APIX** (API Exchange for Medicinal
 Products) is the FHIR-R5 **transport** that submits it, tracks it, and pushes
-real-time updates. Storyline: a routine **Type IB specification variation** for
-*Velexa 175 mg film-coated tablets* — tighten end-of-shelf-life Water Content
-(2.0% → 1.5% w/w). Audience is FHIR-literate (regulators, pharma, RIM vendors);
+real-time updates. Storyline: a **US Prior Approval Supplement (PAS)** for
+*Velexa 175 mg film-coated tablets* — add an **N-nitroso-velexate (NDSRI)** limit
+and confirmatory LC-MS/MS test, where the limit is **computed** (acceptable intake
+100 ng/day ÷ max daily dose 350 mg/day = 0.29 ppm). Audience is FHIR-literate (regulators, pharma, RIM vendors);
 goal is clarity on stage with **real, valid R5** under the hood.
 
 ## Repository layout

@@ -16,9 +16,10 @@ the safety net — if anything wobbles live, flip back to Mock and keep going.
 ---
 
 ### 0:00–2:30 · The problem, and the honest frame
-- "A routine post-approval CMC change — tightening one shelf-life limit — is an
-  **ICH Q12 Established-Condition change**. Today it travels as assembled PDFs
-  through a gateway, reviewed as narrative. Weeks; no structured data; no live status."
+- "A safety-driven post-approval CMC change — **adding a nitrosamine (NDSRI)
+  limit** to a finished-product spec — is filed as a **US Prior Approval
+  Supplement**. Today it travels as assembled PDFs through a gateway, reviewed as
+  narrative. Weeks; no structured data; no live status."
 - **Set expectations up front (this is what earns the room):** "To be precise about
   where FDA actually is: FDA funds the **PQ-CMC FHIR IG** (R5, solid-oral-dose,
   STU/draft, voluntary); runs **KASA** in production for structured generic-SODF
@@ -38,10 +39,11 @@ the safety net — if anything wobbles live, flip back to Mock and keep going.
   solid-oral-dose tablet — inside PQ-CMC's current scope.**"
 - **[Next → "Consolidate"]** "One structured specification." Toggle **Document ⇄
   FHIR**. "The same source is a human eCTD 3.2.P.5.1 view *and* a machine-readable
-  PQI Bundle." Point at the highlighted row: "This change — Water Content
-  2.0%→1.5% at end of shelf life — is a **computable Q12 Established-Condition
-  change**: an old range → a new range on a named, coded test. A machine can reason
-  about it; a PDF you re-read."
+  PQI Bundle — the **same NDSRI limit** highlighted in both faces." Then the kicker:
+  "That limit isn't typed in — it's **computed**: acceptable intake **100 ng/day ÷
+  350 mg/day max daily dose = 0.29 ppm**. A PDF states a number; structured data
+  **derives** it, and re-derives if the dose changes. A calculation a document
+  physically cannot do."
 
 ### 7:30–13:00 · Act 2 — Carry it over APIX (the transport half)
 - **[Next → "Connect"]** "APIX Step 1 — register `Organization` + `Endpoint`,
@@ -59,11 +61,16 @@ the safety net — if anything wobbles live, flip back to Mock and keep going.
 ### 13:00–17:30 · Act 3 — Review, decide, and the FDA-grade substance
 - **[Next → "Received"]** Health Authority pane fills; the **status spine** advances
   with timestamps.
-- **Review — the data-over-documents proof.** Toggle **Tested batch → Bad**, click
-  **Validate structured data** → the structured acceptance criterion **fails
-  instantly** (Water Content 1.8% vs the tightened ≤1.5%). "In a 300-page PDF that's
-  buried; structured, it's caught at submit. This is the input a **KASA-style**
-  structured assessment consumes."
+- **Review — the data-over-documents proof.** The batch defaults to the
+  out-of-spec one; click **Validate structured data** → the acceptance criterion
+  **fails instantly, bold red** (N-nitroso-velexate **0.45 ppm** vs the computed
+  **≤ 0.29 ppm**). "In a 300-page PDF that's buried; structured, it's caught at
+  submit. This is the input a **KASA-style** structured assessment consumes."
+- **The gasp — cryptographic integrity.** In the case detail, **Verify** the
+  applicant's signature → green *signed by SynthPharma*. Tick **Tamper** → the
+  signed NDSRI limit is altered → **Verify** again → red *signature invalid,
+  content altered after signing*. "Real RSA-PSS over the canonical Bundle; a PDF
+  has no equivalent."
 - **Audit trail — for the FDA IT seniors.** Open **Inspect → Audit trail**. "Every
   transition emits a FHIR **`Provenance`** — the **who/what/when/why** FDA's
   data-integrity guidance requires. Audit-by-design, mapped to **21 CFR Part 11 /
@@ -91,8 +98,9 @@ the safety net — if anything wobbles live, flip back to Mock and keep going.
 ---
 
 **If time is tight, the must-keep beats:** the honesty frame (0:00) · Harmonize→
-Consolidate with the **Q12 EC** line · Submit + **View on public server** · **Bad-
-batch FAIL** · **Audit trail / Provenance** · the alignment close.
+Consolidate with the **computed-limit** line (AI÷MDD) · Submit + **View on public
+server** · **out-of-spec FAIL** + **signature tamper** · **Audit trail /
+Provenance** · the alignment close.
 
 **If a live call wobbles:** flip Backend → **Mock** and continue; say "switching to
 the offline reference server" — the resources and the story are identical.

@@ -51,8 +51,8 @@
   function ts(d) { d = d || now(); return d.toTimeString().slice(0, 8); }
 
   function batchLabel() { return (APIX.pqi.batches[batchKey] || {}).label || batchKey; }
-  function waterCheck() {
-    return APIX.pqi.validate(batchKey).filter(function (r) { return /Water/.test(r.test); })[0];
+  function failingCheck() {
+    return APIX.pqi.validate(batchKey).filter(function (r) { return !r.pass; })[0];
   }
 
   /* The shared regulatory case number the engine stamps on submit (real). */
@@ -123,7 +123,7 @@
       'under-assessment': 'FDA opens the structured specification for assessment.',
       'clock-stop': 'Information request issued — the review clock stops.',
       'clock-restart': 'SynthPharma responds — the review clock restarts.',
-      'approved': 'FDA approves the supplement — the tightened limit takes effect.',
+      'approved': 'FDA approves the supplement — the new NDSRI limit takes effect.',
       'rejected': 'FDA issues a Complete Response Letter — not approved.'
     };
     return map[biz] || 'FDA advances the Task state.';
@@ -317,7 +317,7 @@
           '<button class="link-btn" data-act="sig-json">view signature { }</button> ' +
           '<span class="sig-demo">illustrative demo key</span></p>' +
         '<label class="sig-tamper"><input type="checkbox" id="sig-tamper-cb"' + (store.tampered ? ' checked' : '') + '>' +
-          ' Tamper &mdash; alter the signed Water Content limit after signing</label>' +
+          ' Tamper &mdash; alter the signed NDSRI limit after signing</label>' +
         (store.tampered && store.tamperInfo
           ? '<p class="sig-altered">Altered: ' + esc(store.tamperInfo.field) + ' &middot; ' +
               esc(store.tamperInfo.from) + ' &rarr; ' + esc(store.tamperInfo.to) + '</p>' : '') +
@@ -342,7 +342,7 @@
     }).join('');
     var banner = anyFail
       ? '<div class="val-banner val-banner-fail">Non-conformance flagged — ' +
-          esc(waterCheck().test) + ' drift detected</div>'
+          esc((failingCheck() || {}).test || 'specification') + ' breach detected</div>'
       : '<div class="val-banner val-banner-pass">Batch conforms — all limits met</div>';
     return '<div class="ad-batch-label">' + esc(batchLabel()) + '</div>' + banner +
       '<table class="val-table"><thead><tr><th>Test</th><th>Criterion</th><th>Measured</th><th>Result</th></tr></thead>' +
@@ -682,8 +682,8 @@
       '<td>Our structured <code>PlanDefinition</code> + <code>ObservationDefinition</code> spec is the kind of ' +
       'structured input a KASA-style assessment consumes. <em>Production (SODF).</em></td></tr>' +
     '<tr><td><strong>ICH Q12 Established Conditions</strong></td>' +
-      '<td>The Water-Content variation is a <strong>computable EC change</strong> — old range &rarr; new range on a ' +
-      'named, coded test. <em>Final guidance.</em></td></tr>' +
+      '<td>Adding the NDSRI limit is a <strong>computable EC change</strong> — a new named, coded test whose ' +
+      'limit is <strong>derived from AI &divide; MDD</strong>, not transcribed. <em>Final guidance.</em></td></tr>' +
     '<tr><td><strong>ESG NextGen</strong> submit / status / acknowledge</td>' +
       '<td>APIX is the FHIR-native rendering of an ESG-NextGen-style submit-and-track API — NextGen is REST <em>poll</em> for status; APIX adds real-time push + structured workflow state. <em>Production (REST, not FHIR).</em></td></tr>' +
     '<tr><td><strong>21 CFR Part 11 / ALCOA</strong></td>' +

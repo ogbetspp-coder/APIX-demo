@@ -8,9 +8,10 @@ idea **crystal clear**:
 > that carries it, tracks it, and notifies both sides in real time — over the
 > same rails whether the payload is a PDF **or** structured FHIR.
 
-The storyline is a **routine Type IB specification variation** for *Velexa 175 mg
-film-coated tablets*: tighten the end-of-shelf-life Water Content limit
-(2.0% → 1.5% w/w).
+The storyline is a **US Prior Approval Supplement (PAS)** for *Velexa 175 mg
+film-coated tablets*: add an **N-nitroso-velexate (NDSRI)** acceptance criterion
+and confirmatory LC-MS/MS test, where the limit is **computed** from the
+acceptable intake (100 ng/day) ÷ the maximum daily dose (350 mg/day) = 0.29 ppm.
 
 ## Run it
 

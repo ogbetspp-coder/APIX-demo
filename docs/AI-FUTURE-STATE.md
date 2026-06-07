@@ -42,14 +42,14 @@ Established-Condition change (range → range); it cannot over a 300-page narrat
 So APIX + PQI is exactly what makes a **low-model-risk, human-in-the-loop** AI COU possible.
 
 Illustrative COU for the demo (low risk by construction):
-- **Question of interest** — "Does the tested batch meet the tightened end-of-shelf-life
-  Water Content Established Condition (≤ 1.5% w/w)?"
+- **Question of interest** — "Does the tested batch meet the new N-nitroso-velexate
+  (NDSRI) Established Condition (≤ 0.29 ppm, computed from AI ÷ MDD)?"
 - **Context of use** — an AI assistant *pre-screens* the structured PQI spec: confirms the
   computable EC delta, machine-checks the batch against the coded acceptance criteria, and
   *drafts* an assessment note for the reviewer.
 - **Model influence** — **LOW**: the criterion is a deterministic numeric check; AI triages
   and summarizes, it does not adjudicate.
-- **Decision consequence** — bounded: a single Type IB quality variation, fully re-checkable.
+- **Decision consequence** — bounded: a single Prior Approval Supplement, fully re-checkable.
 - **→ Model risk = LOW** → light credibility evidence suffices; **the human assessor decides**;
   every AI step is logged to the same `Provenance` audit trail (21 CFR Part 11 / ALCOA).
 
