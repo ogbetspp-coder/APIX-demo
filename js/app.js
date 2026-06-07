@@ -1,331 +1,194 @@
 /*
- * UI controller — single-column "submission tracker" narrative.
+ * UI controller — a guided 3-beat story for a lay audience (and FDA technical
+ * viewers). One idea per screen:
  *
- * The visible surface is plain business English: one quality change, submitted
- * as data, tracked end to end. A 4-step tracker (Submit · Received & checked ·
- * Review · Decision) with ONE active step at a time, a quiet activity log, and a
- * closing payoff. The ONLY place FHIR / JSON appears is the Inspect slide-over.
+ *   1 · The change       SynthPharma tightens a quality limit. A Document↔Data
+ *                         toggle makes the structured-data idea obvious.
+ *   2 · Send & check      The real APIX submit chain runs; FDA's system reads the
+ *                         data and machine-checks a real batch (data vs data).
+ *   3 · Decision + AI      FDA decides; an AI assessment streams, generated live
+ *                         from the real batch values.
  *
- * The FHIR data layer (APIX.store / APIX.client / APIX.pqi / APIX.terminology)
- * is unchanged; this file only renders it. The flow is driven through the same
- * store APIs the previous controller used:
+ * Plain English on the surface. The FHIR R5 engine (APIX.store / client / pqi /
+ * terminology) is UNCHANGED — this file only renders it and drives the flow:
  *   store.connect() / submit() / subscribe() / updateTask(effect)   (all async)
  *   store.bus 'task' | 'notification' | 'provenance'                 (events)
  *   APIX.client.bus 'io'                                             (API-call list)
  *
- * Inspect renderers (Task card, APIX wrapper + base64 decode, ConceptMap mapping,
- * conformance OperationOutcome, Provenance audit trail, API-call list, rendered
- * eCTD spec) and the About panel + backend toggle + AI stepper are PRESERVED from
- * the prior version, ported behind plain-language surface links.
+ * The Inspect slide-over is the ONLY place raw FHIR / JSON lives. All Inspect
+ * renderers, the About panel, the backend toggle, and the audit/IO rendering are
+ * preserved from the prior controller; only the surface state machine, the three
+ * beats, their handlers, and reset are rewritten.
  */
 (function () {
   var store = APIX.store;
 
   /* ============================ STATE ==================================== */
-  /* Four business steps. `active` = the one in focus. Each step records a
-     completion timestamp the moment it is finished. */
-  var STEPS = [
-    { key: 'submit',   label: 'Submit' },
-    { key: 'received', label: 'Received & checked' },
-    { key: 'review',   label: 'Review' },
-    { key: 'decision', label: 'Decision' }
+  var BEATS = [
+    { key: 1, label: 'The change' },
+    { key: 2, label: 'Send & check' },
+    { key: 3, label: 'Decision' }
   ];
-  var active = 'submit';        // current step key, or 'done' at terminal
-  var done = {};                // step key -> Date completed
+  var beat = 1;                 // 1 | 2 | 3
+  var doneBeat = {};            // beat number -> true when completed
   var inFlight = false;         // a handler is awaiting (guards double-clicks)
 
-  var reached = {};             // businessStatus code -> Date (for elapsed / log timing)
+  var changeView = 'document';  // 'document' | 'data' (Beat 1 toggle)
+  var sent = false;             // the submit chain has completed (Beat 2)
+  var batchKey = 'good';        // 'good' | 'bad' — the tested batch
+  var batchChecked = false;     // a batch check has been run
+  var infoAsked = false;        // an Information Request round was opened
+  var decided = null;           // 'approve' | 'reject'
+  var aiRun = false;            // the AI assessment has been streamed
+
+  var reached = {};             // status code -> Date (for elapsed)
   var lastNotif = null;         // most recent notification (Inspect focus)
   var ioEntries = [];           // captured { request, response } interactions
-  var auditEntries = [];        // audit records (kept inside Inspect only)
-  var batchKey = 'good';        // 'good' | 'bad' — regulator's tested batch
-  var batchChecked = false;     // a check has been run
-  var infoAsked = false;        // a question round was opened
-  var decided = null;           // 'approve' | 'reject'
+  var auditEntries = [];        // audit records (Inspect only)
 
   function el(id) { return document.getElementById(id); }
   function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
-  function show(id) { var e = el(id); if (e) e.hidden = false; }
-  function hide(id) { var e = el(id); if (e) e.hidden = true; }
   function now() { return new Date(); }
-  function timeStr(d) { return d ? d.toLocaleTimeString() : ''; }
   function delay(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  function reduced() { return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches; }
 
-  /* ====================== 4. WORKFLOW TRACKER ============================ */
-  function stepState(key) {
-    if (done[key]) return 'done';
-    if (active === key) return 'active';
-    // a step is "active-but-future" until reached; everything past `active` is future
-    var ai = STEPS.findIndex(function (s) { return s.key === active; });
-    var ki = STEPS.findIndex(function (s) { return s.key === key; });
-    return ki < ai ? 'done' : 'future';
+  /* The proposed limit as a short readable "≤ 1.5%" (derived, never hard-coded):
+     read the Water Content check row's criterion off the engine. */
+  function proposedLimit() {
+    var w = APIX.pqi.validate(batchKey).filter(function (r) { return /Water/.test(r.test); })[0];
+    return w ? w.criterion.replace(/\s*w\/w$/, '') : '≤ 1.5%';   // "≤ 1.5%"
   }
-  function renderTracker() {
-    var html = STEPS.map(function (s, i) {
-      var st = stepState(s.key);
-      var mark = st === 'done' ? '<span class="tk-mark tk-done">✓</span>'
-        : '<span class="tk-mark tk-dot"></span>';
-      var ts = (st === 'done' && done[s.key]) ? '<span class="tk-time">' + esc(timeStr(done[s.key])) + '</span>' : '';
-      var sep = i ? '<span class="tk-sep"></span>' : '';
-      return sep + '<div class="tk-step tk-' + st + '">' + mark +
-        '<span class="tk-lbl">' + esc(s.label) + '</span>' + ts + '</div>';
-    }).join('');
-    el('tracker').innerHTML = html;
+  function waterCheck() {
+    return APIX.pqi.validate(batchKey).filter(function (r) { return /Water/.test(r.test); })[0];
+  }
+  function batchLabel() { return (APIX.pqi.batches[batchKey] || {}).label || batchKey; }
+
+  /* ====================== BREADCRUMB ==================================== */
+  function renderCrumb() {
+    el('crumb').innerHTML = BEATS.map(function (b) {
+      var state = doneBeat[b.key] ? 'done' : (beat === b.key ? 'now' : 'future');
+      var mark = state === 'done' ? '<span class="cr-mark">✓</span>' : '';
+      return '<span class="cr-step cr-' + state + '">' +
+        '<span class="cr-n">' + b.key + '</span>' +
+        '<span class="cr-l">' + esc(b.label) + '</span>' + mark + '</span>';
+    }).join('<span class="cr-sep"></span>');
   }
 
-  /* ====================== 5. CURRENT-STEP FOCUS ========================== */
-  /* The one big active area. Plain words: whose move, a one-line description,
-     and the controls for the live step. Only one renders at a time. */
-  function renderFocus() {
-    if (inFlight) {
-      el('focus').innerHTML = focusShell('', 'Working…', '<p class="focus-desc">One moment.</p>');
-      return;
+  /* ============================ RENDER ================================== */
+  function render() {
+    renderCrumb();
+    if (inFlight && beat === 2 && !sent) return;   // exchange animation owns the stage
+    if (beat === 1) return renderBeat1();
+    if (beat === 2) return renderBeat2();
+    if (beat === 3) return renderBeat3();
+  }
+
+  /* ----------------------- BEAT 1 — The change ------------------------- */
+  function renderBeat1() {
+    var c = APIX.pqi.CHANGE;
+    var after = c.after.replace(/^NMT\s*/, '').replace(/\s*w\/w$/, '');   // "1.5%"
+    var before = c.before.replace(/^NMT\s*/, '').replace(/\s*w\/w$/, ''); // "2.0%"
+
+    var docBody = '<p class="chg-sentence">Water content, measured at the end of the tablet’s shelf life, ' +
+      'must now be no more than <span class="chg-new">' + esc(after) + '</span> — tightened from ' +
+      '<span class="chg-old">' + esc(before) + '</span>.</p>';
+
+    var dataBody = '<dl class="chg-record">' +
+      '<div><dt>Test</dt><dd>Water content</dd></div>' +
+      '<div><dt>Limit</dt><dd><strong>≤ ' + esc(after) + '</strong> <span class="chg-was">(was ≤ ' + esc(before) + ')</span></dd></div>' +
+      '<div><dt>When</dt><dd>End of shelf life</dd></div>' +
+      '<div><dt>Method</dt><dd>Karl Fischer (USP &lt;921&gt;)</dd></div>' +
+      '</dl>';
+
+    el('beat').innerHTML =
+      '<div class="actor">SynthPharma · drug maker</div>' +
+      '<h2 class="b-head">Tightening a quality limit on Velexa tablets.</h2>' +
+      '<div class="toggle" role="group" aria-label="View">' +
+        '<button class="tg-opt' + (changeView === 'document' ? ' on' : '') + '" data-view="document">Document</button>' +
+        '<button class="tg-opt' + (changeView === 'data' ? ' on' : '') + '" data-view="data">Data</button>' +
+      '</div>' +
+      '<div class="chg-panel">' + (changeView === 'document' ? docBody : dataBody) + '</div>' +
+      '<p class="chg-caption">The same fact — a person can read it, and so can a computer. ' +
+        '<button class="link-btn" data-inspect="fhir">{ } View as FHIR</button></p>' +
+      '<p class="b-why">Backed by 36-month stability data. A change FDA must review.</p>' +
+      '<div class="b-controls">' +
+        '<button class="btn-primary" data-act="send">Send to FDA →</button>' +
+      '</div>';
+  }
+
+  /* ----------------------- BEAT 2 — Send & check ----------------------- */
+  /* The exchange animation: SynthPharma —▸ token —▸ FDA, two ticks in sequence. */
+  function exchangeShell(arrived, checked) {
+    return '<div class="exchange">' +
+      '<div class="ex-node">SynthPharma</div>' +
+      '<div class="ex-wire' + (sent ? ' ex-wire-on' : '') + '"><span class="ex-token"></span></div>' +
+      '<div class="ex-node">FDA</div>' +
+      '</div>' +
+      '<div class="ex-ticks">' +
+        '<div class="ex-tick' + (arrived ? ' on' : '') + '"><span class="ex-c">✓</span> Received</div>' +
+        '<div class="ex-tick' + (checked ? ' on' : '') + '"><span class="ex-c">✓</span> Checked automatically <small>(format &amp; completeness)</small></div>' +
+      '</div>';
+  }
+
+  function renderBeat2() {
+    var w = batchChecked ? waterCheck() : null;
+    var resultHtml = '';
+    if (batchChecked && w) {
+      var pass = w.pass;
+      resultHtml = '<div class="chk-result ' + (pass ? 'chk-pass' : 'chk-fail') + '">' +
+          'Batch measured <strong>' + esc(w.measured) + '</strong>' +
+          '<span class="chk-vs">vs</span>limit <strong>' + esc(proposedLimit()) + '</strong>' +
+          '<span class="chk-arrow">→</span>' +
+          (pass ? '<span class="chk-verdict">✓ Within the limit</span>'
+                : '<span class="chk-verdict">✗ Exceeds the limit</span>') +
+        '</div>' +
+        '<p class="chk-point">No one re-typed anything — the computer compared the batch’s data to the limit. ' +
+          '<button class="link-btn" data-inspect="batch">see the check { }</button></p>';
     }
-    switch (active) {
-      case 'submit':   return renderSubmitFocus();
-      case 'received': return renderReceivedFocus();
-      case 'review':   return renderReviewFocus();
-      case 'decision': return renderDecisionFocus();
-      case 'done':     el('focus').innerHTML = ''; el('focus').hidden = true; return;
-    }
-  }
-  function focusShell(actor, title, body) {
-    var who = actor ? '<div class="focus-actor">' + esc(actor) + '</div>' : '';
-    return who + '<h3 class="focus-title">' + esc(title) + '</h3>' + body;
-  }
 
-  function renderSubmitFocus() {
-    el('focus').hidden = false;
-    el('focus').innerHTML = focusShell('SynthPharma',
-      'Ready to submit',
-      '<p class="focus-desc">Send the supplement to FDA over the live connection.</p>' +
-      '<div class="focus-controls">' +
-        '<button class="btn-primary" data-act="submit">Submit to FDA</button>' +
-      '</div>');
-  }
-
-  function renderReceivedFocus() {
-    el('focus').hidden = false;
-    el('focus').innerHTML = focusShell('FDA',
-      'Received and checked',
-      '<p class="focus-desc">Arrived instantly and passed automatic checks — no human action needed.</p>' +
-      '<p class="focus-auto">Format and completeness OK.</p>');
-  }
-
-  function renderReviewFocus() {
-    el('focus').hidden = false;
-    var resultHtml = batchChecked ? batchResultHtml() : '';
-    var continueBtn = batchChecked
-      ? '<button class="btn-primary" data-act="to-decision">Continue to decision</button>'
-      : '';
-    el('focus').innerHTML = focusShell('FDA',
-      'Review',
-      '<p class="focus-desc">Check a manufactured batch against the new limit.</p>' +
-      '<div class="batch-pick">' +
+    el('beat').innerHTML =
+      exchangeShell(sent, sent) +
+      '<h2 class="b-head">FDA’s system reads the data and checks a real batch — automatically.</h2>' +
+      '<div class="chk-pick">' +
         '<button class="pick-opt' + (batchKey === 'good' ? ' on' : '') + '" data-batch="good">Representative batch</button>' +
         '<button class="pick-opt' + (batchKey === 'bad' ? ' on' : '') + '" data-batch="bad">Out-of-spec batch</button>' +
         '<button class="btn-ghost" data-act="run-check">Run check</button>' +
       '</div>' +
-      '<div class="batch-result" id="batch-result">' + resultHtml + '</div>' +
-      '<div class="focus-controls">' + continueBtn + '</div>');
+      '<div class="chk-out">' + resultHtml + '</div>' +
+      '<div class="b-controls">' +
+        '<button class="btn-primary" data-act="to-decision"' + (batchChecked ? '' : ' disabled') + '>FDA decides →</button>' +
+      '</div>';
   }
 
-  /* The batch check result, in plain language. Green PASS / red FAIL — the one
-     place those two colors are used. Detail (the structured criteria) is inside
-     Inspect via "see the criteria". */
-  function batchResultHtml() {
-    var results = APIX.pqi.validate(batchKey);
-    var anyFail = results.some(function (v) { return !v.pass; });
-    if (anyFail) {
-      return '<div class="result result-fail">' +
-          '<span class="result-mark">✗</span>' +
-          '<span class="result-text">Exceeds the new limit</span></div>' +
-        '<p class="result-conseq">Flagged automatically — before any human opened the file.</p>' +
-        '<button class="link-btn" data-inspect="batch">see the criteria</button>';
-    }
-    return '<div class="result result-pass">' +
-        '<span class="result-mark">✓</span>' +
-        '<span class="result-text">Meets the new limit (≤ 1.5%)</span></div>' +
-      '<p class="result-conseq">Verified against the coded limit — no manual re-checking.</p>' +
-      '<button class="link-btn" data-inspect="batch">see the criteria</button>';
-  }
-
-  function renderDecisionFocus() {
-    el('focus').hidden = false;
+  /* ----------------------- BEAT 3 — Decision + AI ---------------------- */
+  function renderBeat3() {
     var convo = infoAsked ? rsiHtml() : '';
-    el('focus').innerHTML = focusShell('FDA',
-      'Decision',
-      '<p class="focus-desc">Approve the supplement, send an Information Request, or issue a Complete Response.</p>' +
+    var payoff = decided ? payoffHtml() : '';
+    var decisionBlock = decided ? '' :
       '<div class="decision-row">' +
         '<button class="btn-primary" data-decision="approve">Approve</button>' +
         '<button class="btn-ghost" data-decision="info"' + (infoAsked ? ' disabled' : '') + '>Send Information Request</button>' +
         '<button class="btn-ghost" data-decision="reject">Issue Complete Response</button>' +
       '</div>' +
-      '<div class="rsi" id="rsi">' + convo + '</div>');
+      '<div class="rsi">' + convo + '</div>';
+
+    el('beat').innerHTML =
+      '<div class="actor">FDA</div>' +
+      '<h2 class="b-head">FDA decides.</h2>' +
+      decisionBlock + payoff +
+      aiPanelHtml();
   }
 
-  /* The two-message question exchange (real text from the engine). No FHIR words
-     on the surface. */
+  /* The two-message Information Request exchange (real engine text). */
   function rsiHtml() {
-    var answered = !!done.answered;
-    var q = '<div class="msg msg-ha">' +
-      '<div class="msg-from">FDA</div>' +
+    var answered = !!doneBeat.answered;
+    var q = '<div class="msg msg-ha"><div class="msg-from">FDA</div>' +
       '<div class="msg-body">' + esc(APIX.RSI.question) + '</div></div>';
     var a = answered
-      ? '<div class="msg msg-sponsor">' +
-          '<div class="msg-from">SynthPharma</div>' +
+      ? '<div class="msg msg-sponsor"><div class="msg-from">SynthPharma</div>' +
           '<div class="msg-body">' + esc(APIX.RSI.answer) + '</div></div>'
-      : '<div class="focus-controls"><button class="btn-ghost" data-act="answer">Send sponsor answer</button></div>';
+      : '<div class="b-controls"><button class="btn-ghost" data-act="answer">Send sponsor reply</button></div>';
     return q + a;
-  }
-
-  /* ========================== 6. ACTIVITY LOG =========================== */
-  /* Quiet vertical list, newest at the bottom. Plain language only; each row may
-     carry a small "details" link into Inspect. */
-  function logEvent(text, inspectKey) {
-    var row = document.createElement('div');
-    row.className = 'log-row';
-    row.innerHTML = '<span class="log-time">' + timeStr(now()) + '</span>' +
-      '<span class="log-msg">' + esc(text) + '</span>' +
-      (inspectKey ? '<button class="link-btn" data-inspect="' + esc(inspectKey) + '">details</button>' : '');
-    el('log').appendChild(row);
-    el('log').scrollTop = el('log').scrollHeight;
-  }
-
-  /* Two-party hand-off cue: emphasize whichever side is acting now. */
-  function renderParties() {
-    var ind = el('party-ind'), ha = el('party-ha');
-    if (ind) ind.classList.toggle('on', active === 'submit');
-    if (ha) ha.classList.toggle('on', active === 'received' || active === 'review' || active === 'decision');
-  }
-
-  /* ============================ DISPATCH ================================ */
-  function refresh() { renderTracker(); renderParties(); renderFocus(); }
-
-  /* A surface button was clicked. */
-  async function runAct(actKey) {
-    if (inFlight) return;
-    if (actKey === 'submit')        return doSubmit();
-    if (actKey === 'run-check')     return doRunCheck();
-    if (actKey === 'to-decision')   return doToDecision();
-    if (actKey === 'answer')        return doAnswer();
-  }
-
-  /* Switching the tested batch clears any prior result (re-run required). */
-  function setBatch(key) {
-    if (inFlight) return;
-    batchKey = key;
-    batchChecked = false;
-    renderFocus();
-  }
-
-  /* --- Submit (SynthPharma): real submit + the automatic received/checked chain
-     with brief delays so the tracker advances live. --- */
-  async function doSubmit() {
-    inFlight = true; refresh();
-    try {
-      // Author the structured content (silent — fires the real $translate calls
-      // that show up in Inspect's API list), then submit.
-      APIX.terminology.rows().forEach(function (r, n) {
-        setTimeout(function () { APIX.client.translate(r.source.system, r.source.code); }, 40 * n);
-      });
-      APIX.pqi.normalize();
-
-      await store.connect();
-      await store.submit();
-      if (!reached['submitted']) reached['submitted'] = now();
-      logEvent('Submitted to FDA', 'task');
-      done.submit = now();
-
-      await store.subscribe();
-
-      // --- automatic chain: received, then validated ---
-      active = 'received';
-      inFlight = false; refresh();
-      await delay(620);
-
-      await store.updateTask({ type: 'updateTask', status: 'received', businessStatus: 'received', addProcedureNo: true, addOutputs: ['ack'] });
-      await delay(560);
-      await store.updateTask({ type: 'updateTask', status: 'accepted', businessStatus: 'validation-successful', addOutputs: ['validation'], flexibility: true });
-      logEvent('Received by FDA and checked automatically — format and completeness OK', 'conformance');
-      done.received = now();
-
-      await delay(520);
-      active = 'review';
-      refresh();
-    } catch (e) {
-      logEvent('Submission could not be completed.');
-      inFlight = false;
-      refresh();
-    }
-  }
-
-  /* --- Review (FDA): run the batch check. --- */
-  async function doRunCheck() {
-    inFlight = true; refresh();
-    try {
-      await store.updateTask({ type: 'updateTask', status: 'in-progress', businessStatus: 'under-assessment' });
-      logEvent('Under FDA review', 'task');
-    } catch (e) { /* keep going — the check itself is local */ }
-    batchChecked = true;
-    inFlight = false;
-    renderFocus();
-  }
-
-  function doToDecision() {
-    active = 'decision';
-    done.review = now();
-    refresh();
-  }
-
-  /* --- Decision (FDA). --- */
-  async function onDecision(kind) {
-    if (inFlight || active !== 'decision') return;
-    if (kind === 'info' && infoAsked) return;
-    inFlight = true; refresh();
-    try {
-      if (kind === 'approve') {
-        await store.updateTask({ type: 'updateTask', status: 'completed', businessStatus: 'approved', taskCode: 'approval', addOutputs: ['approval', 'assessment'] });
-        decided = 'approve';
-        logEvent('Approved', 'task');
-        finish();
-      } else if (kind === 'reject') {
-        await store.updateTask({ type: 'updateTask', status: 'completed', businessStatus: 'rejected', taskCode: 'rejection', addOutputs: ['rejection'], statusReason: 'Complete Response: the tested batch did not meet the proposed limit.' });
-        decided = 'reject';
-        logEvent('Complete Response Letter issued', 'task');
-        finish();
-      } else if (kind === 'info') {
-        await store.updateTask({ type: 'updateTask', status: 'on-hold', businessStatus: 'clock-stop', taskCode: 'information-request' });
-        infoAsked = true;
-        logEvent('Information Request sent', 'notif');
-        inFlight = false;
-        renderFocus();
-        return;
-      }
-    } catch (e) {
-      logEvent('Action could not be completed.');
-    }
-    inFlight = false;
-    refresh();
-  }
-
-  async function doAnswer() {
-    if (inFlight) return;
-    inFlight = true; refresh();
-    try {
-      await store.updateTask({ type: 'updateTask', status: 'in-progress', businessStatus: 'clock-restart', taskCode: 'response-to-questions' });
-      done.answered = now();
-      logEvent('Information Request answered', 'notif');
-    } catch (e) { logEvent('Answer could not be sent.'); }
-    inFlight = false;
-    renderFocus();
-  }
-
-  /* ============================ 7. PAYOFF =============================== */
-  function finish() {
-    done.decision = now();
-    active = 'done';
-    setTimeout(renderPayoff, 650);
   }
 
   function fmtElapsed(ms) {
@@ -334,64 +197,195 @@
     if (ms < 60000) return (ms / 1000).toFixed(1) + ' s';
     return (ms / 60000).toFixed(1) + ' min';
   }
-
-  function renderPayoff() {
-    refresh();
+  function elapsedStr() {
     var first = reached['submitted'];
-    var last = reached['approved'] || reached['rejected'] || done.decision;
-    var elapsed = (first && last) ? fmtElapsed(last - first) : '—';
-    var head = decided === 'approve'
-      ? 'Approved in ' + esc(elapsed) + ' — end to end, every step time-stamped and audited.'
-      : 'Decision in ' + esc(elapsed) + ' — not approved; every step time-stamped and audited.';
-    var p = el('payoff');
-    p.hidden = false;
-    p.innerHTML =
-      '<h3 class="payoff-head">' + head +
-        ' <button class="link-btn" data-inspect="audit">audit trail</button></h3>' +
-      '<p class="payoff-contrast">The paper equivalent: weeks of assembled documents, manual review, and status by letter.</p>' +
-      '<button class="btn-ghost" id="future-toggle">Future state · AI-assisted review →</button>';
-    p.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    var last = reached['approved'] || reached['rejected'] || now();
+    return (first) ? fmtElapsed(last - first) : '—';
   }
 
-  /* Closing beat (opt-in): AI-assisted review stepper. Framed strictly inside
-     FDA's Jan-2025 draft framework — illustrative, low-risk, human-in-the-loop.
-     The only on-surface technical hint is allowed inside this future-state note. */
-  var AI_FLOW = [
-    { who: 'AI',    title: 'Read',      desc: 'Read the structured submission and spot the change.' },
-    { who: 'AI',    title: 'Check',     desc: 'Check the batch against the coded acceptance limit.' },
-    { who: 'AI',    title: 'Draft',     desc: 'Draft the assessment note and risk flag.' },
-    { who: 'AI',    title: 'Summarize', desc: 'Summarize the findings for the assessor.' },
-    { who: 'Human', title: 'Decide',    desc: 'Assessor approves, asks, or rejects.' }
-  ];
-  function renderFuture() {
-    var steps = AI_FLOW.map(function (s, i) {
-      var arrow = i ? '<div class="ai-arrow">→</div>' : '';
-      return arrow + '<div class="ai-step ai-' + (s.who === 'Human' ? 'human' : 'bot') + '">' +
-        '<div class="ai-actor">' + esc(s.who) + '</div>' +
-        '<div class="ai-title">' + esc(s.title) + '</div>' +
-        '<div class="ai-desc">' + esc(s.desc) + '</div></div>';
-    }).join('');
-    el('future').innerHTML =
-      '<div class="future-head"><h3>Future state — AI-assisted review</h3>' +
-        '<span class="future-badge">illustrative</span></div>' +
-      '<div class="ai-flow">' + steps + '</div>' +
-      '<p class="future-foot">A narrow, low-risk use — the limit is a deterministic numeric check — with the ' +
-        'human in the loop: AI <strong>supports</strong>, FDA <strong>decides</strong>; every step audited. ' +
-        'Possible only because the content is <strong>structured</strong>.</p>';
-    el('future').hidden = false;
-    var tg = el('future-toggle'); if (tg) tg.disabled = true;
-    el('future').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  function payoffHtml() {
+    var msg = decided === 'approve'
+      ? 'Approved in ' + esc(elapsedStr()) + ' — every step recorded and audited.'
+      : 'Complete Response — not approved (in ' + esc(elapsedStr()) + '). Every step recorded and audited.';
+    return '<div class="payoff"><p class="payoff-head">' + msg +
+      ' <button class="link-btn" data-inspect="audit">audit trail { }</button></p></div>';
+  }
+
+  /* The AI panel — always available in Beat 3. Output streams from real data. */
+  function aiPanelHtml() {
+    return '<div class="ai-panel">' +
+      '<div class="ai-head"><h3>AI-assisted review</h3>' +
+        '<span class="ai-tag">illustrative · FDA draft AI guidance, Jan 2025</span></div>' +
+      '<div class="b-controls"><button class="btn-ghost" data-act="ai">Run AI assessment</button></div>' +
+      '<pre class="ai-out" id="ai-out" hidden></pre>' +
+      '<p class="ai-foot">The AI reads the data and drafts; the reviewer decides. ' +
+        'A narrow, low-risk use. (FDA draft AI guidance, Jan 2025.)</p>' +
+      '</div>';
+  }
+
+  /* Build the AI assessment text from the real, currently-selected batch values. */
+  function aiText() {
+    var w = waterCheck();
+    var limit = proposedLimit();                 // "≤ 1.5%"
+    var lines = [
+      'Reading the structured submission…',
+      'Proposed limit: water ' + limit + ' at end of shelf life.',
+      'Tested ' + batchLabel() + ': measured ' + w.measured + ' — ' +
+        (w.pass ? 'within the limit.' : 'above the limit.')
+    ];
+    if (w.pass) {
+      lines.push('Assessment: this batch meets the proposed criterion.');
+      lines.push('Recommendation: data support approval; no additional batch data needed on this point.');
+    } else {
+      lines.push('Assessment: this batch does not meet the proposed criterion.');
+      lines.push('Recommendation: do not approve on this batch; request additional batch data.');
+    }
+    return lines.join('\n');
+  }
+
+  /* ============================ HANDLERS =============================== */
+  async function runAct(actKey) {
+    if (inFlight) return;
+    if (actKey === 'send')        return doSend();
+    if (actKey === 'run-check')   return doRunCheck();
+    if (actKey === 'to-decision') return doToDecision();
+    if (actKey === 'answer')      return doAnswer();
+    if (actKey === 'ai')          return runAi();
+  }
+
+  function setView(v) { if (inFlight) return; changeView = v; renderBeat1(); }
+
+  function setBatch(key) {
+    if (inFlight) return;
+    batchKey = key;
+    batchChecked = false;
+    renderBeat2();
+  }
+
+  /* --- Beat 1 → 2: the REAL submit chain, then the received/checked exchange. */
+  async function doSend() {
+    doneBeat[1] = true;
+    beat = 2;
+    inFlight = true;
+    renderCrumb();
+    el('beat').innerHTML = exchangeShell(false, false) +
+      '<p class="ex-status">Sending…</p>';
+    // kick the token animation on the next frame
+    if (!reduced()) { sent = true; var w = el('beat').querySelector('.ex-wire'); if (w) w.classList.add('ex-wire-on'); }
+
+    try {
+      // Author the structured content (fires the real $translate calls into Inspect),
+      // then run the genuine connect → submit → subscribe chain.
+      APIX.terminology.rows().forEach(function (r, n) {
+        setTimeout(function () { APIX.client.translate(r.source.system, r.source.code); }, 30 * n);
+      });
+      APIX.pqi.normalize();
+
+      await store.connect();
+      await store.submit();
+      if (!reached['submitted']) reached['submitted'] = now();
+
+      await store.subscribe();
+      if (!reduced()) await delay(520);
+
+      // arrival tick
+      await store.updateTask({ type: 'updateTask', status: 'received', businessStatus: 'received', addProcedureNo: true, addOutputs: ['ack'] });
+      sent = true;
+      el('beat').querySelector('.ex-ticks').firstChild.classList.add('on');
+      if (!reduced()) await delay(480);
+
+      // automatic conformance check tick
+      await store.updateTask({ type: 'updateTask', status: 'accepted', businessStatus: 'validation-successful', addOutputs: ['validation'], flexibility: true });
+      var ticks = el('beat').querySelectorAll('.ex-tick');
+      if (ticks[1]) ticks[1].classList.add('on');
+      if (!reduced()) await delay(360);
+
+      sent = true;
+      inFlight = false;
+      renderBeat2();
+    } catch (e) {
+      inFlight = false;
+      el('beat').innerHTML = '<p class="b-why">The submission could not be completed.</p>' +
+        '<div class="b-controls"><button class="btn-ghost" data-act="send">Try again</button></div>';
+    }
+  }
+
+  /* --- Beat 2: run the batch check (real Task → under-assessment, local compare). */
+  async function doRunCheck() {
+    inFlight = true; renderBeat2();
+    try {
+      await store.updateTask({ type: 'updateTask', status: 'in-progress', businessStatus: 'under-assessment' });
+    } catch (e) { /* the comparison itself is local */ }
+    batchChecked = true;
+    inFlight = false;
+    renderBeat2();
+  }
+
+  function doToDecision() {
+    doneBeat[2] = true;
+    beat = 3;
+    render();
+  }
+
+  /* --- Beat 3: FDA decision. --- */
+  async function onDecision(kind) {
+    if (inFlight || beat !== 3 || decided) return;
+    if (kind === 'info' && infoAsked) return;
+    inFlight = true;
+    try {
+      if (kind === 'approve') {
+        await store.updateTask({ type: 'updateTask', status: 'completed', businessStatus: 'approved', taskCode: 'approval', addOutputs: ['approval', 'assessment'] });
+        decided = 'approve';
+        doneBeat[3] = true;
+      } else if (kind === 'reject') {
+        await store.updateTask({ type: 'updateTask', status: 'completed', businessStatus: 'rejected', taskCode: 'rejection', addOutputs: ['rejection'], statusReason: 'Complete Response: the tested batch did not meet the proposed limit.' });
+        decided = 'reject';
+        doneBeat[3] = true;
+      } else if (kind === 'info') {
+        await store.updateTask({ type: 'updateTask', status: 'on-hold', businessStatus: 'clock-stop', taskCode: 'information-request' });
+        infoAsked = true;
+      }
+    } catch (e) { /* surface stays usable */ }
+    inFlight = false;
+    renderBeat3();
+  }
+
+  async function doAnswer() {
+    if (inFlight) return;
+    inFlight = true;
+    try {
+      await store.updateTask({ type: 'updateTask', status: 'in-progress', businessStatus: 'clock-restart', taskCode: 'response-to-questions' });
+      doneBeat.answered = true;
+    } catch (e) { /* keep going */ }
+    inFlight = false;
+    renderBeat3();
+  }
+
+  /* --- The AI demo: stream the data-derived assessment, word by word. --- */
+  async function runAi() {
+    var out = el('ai-out');
+    if (!out) return;
+    var btn = el('beat').querySelector('[data-act="ai"]');
+    if (btn) btn.disabled = true;
+    aiRun = true;
+    out.hidden = false;
+    var text = aiText();
+    if (reduced()) { out.textContent = text; if (btn) btn.disabled = false; return; }
+    out.textContent = '';
+    var tokens = text.split(/(\s+)/);   // keep whitespace so line breaks survive
+    for (var i = 0; i < tokens.length; i++) {
+      out.textContent += tokens[i];
+      if (tokens[i].trim()) await delay(38);
+    }
+    if (btn) btn.disabled = false;
   }
 
   /* ===================================================================== */
   /* ============================ INSPECT ================================= */
-  /* The ONLY place FHIR / JSON appears. All renderers below are ported from the
-     prior controller and keep full R5 fidelity. */
+  /* The ONLY place FHIR / JSON appears. Renderers below keep full R5 fidelity. */
   function openInspect() { el('inspect').hidden = false; el('inspect-toggle').setAttribute('aria-expanded', 'true'); el('inspect-toggle').classList.add('on'); }
   function closeInspect() { el('inspect').hidden = true; el('inspect-toggle').setAttribute('aria-expanded', 'false'); el('inspect-toggle').classList.remove('on'); }
   function toggleInspect() { if (el('inspect').hidden) openInspect(); else closeInspect(); }
-
-  function bytes(n) { return n >= 1e6 ? (n / 1e6).toFixed(1) + ' MB' : Math.round(n / 1e3) + ' KB'; }
 
   function inspectFocus(title, htmlOrObj, isHtml) {
     var body = isHtml ? htmlOrObj : '<pre class="modal-json">' + APIX.highlight(htmlOrObj) + '</pre>';
@@ -550,7 +544,7 @@
   function renderBatchFocus() {
     var results = APIX.pqi.validate(batchKey);
     var anyFail = results.some(function (v) { return !v.pass; });
-    var batchLabel = (APIX.pqi.batches[batchKey] || {}).label || batchKey;
+    var label = (APIX.pqi.batches[batchKey] || {}).label || batchKey;
     var rows = results.map(function (v) {
       return '<tr' + (v.pass ? '' : ' class="val-fail-row"') + '><td>' + esc(v.test) + '</td><td>' + esc(v.criterion) +
         '</td><td>' + esc(v.measured) + '</td><td class="' + (v.pass ? 'pass' : 'fail') + '">' +
@@ -561,7 +555,7 @@
       : '<div class="val-banner val-banner-pass">All criteria met</div>';
     el('inspect-focus').innerHTML =
       '<div class="if-title">Acceptance criteria — batch vs. structured ObservationDefinitions</div>' +
-      '<div class="val-sub">' + esc(batchLabel) + '</div>' + banner +
+      '<div class="val-sub">' + esc(label) + '</div>' + banner +
       '<table class="val-table"><thead><tr><th>Test</th><th>Criterion</th><th>Measured</th><th>Result</th></tr></thead>' +
         '<tbody>' + rows + '</tbody></table>';
   }
@@ -571,7 +565,7 @@
     else if (key === 'harmonize') renderHarmonizeFocus();
     else if (key === 'wrapper') renderWrapperFocus();
     else if (key === 'batch') renderBatchFocus();
-    else if (key === 'spec') inspectFocus('Rendered eCTD 3.2.P.5.1 (specification)', APIX.pqi.renderSpecHtml(), true);
+    else if (key === 'spec') renderWrapperFocus();
     else if (key === 'audit') { scrollAudit(); }
     else if (key === 'conformance') inspectFocus('Conformance check — $validate OperationOutcome (automatic)', store.conformance || { resourceType: 'OperationOutcome', issue: [] });
     else if (key === 'notif') inspectFocus('Subscription notification Bundle', lastNotif || { resourceType: 'Bundle', type: 'subscription-notification' });
@@ -587,7 +581,6 @@
     openInspect();
   }
   function scrollAudit() {
-    // ensure the audit section is visible, then scroll to it within Inspect
     setTimeout(function () { var s = el('audit-sec'); if (s && !s.hidden) s.scrollIntoView({ block: 'start' }); }, 30);
   }
 
@@ -690,19 +683,17 @@
 
   /* ============================ RESET ================================== */
   function resetAll() {
-    active = 'submit'; done = {}; inFlight = false;
+    beat = 1; doneBeat = {}; inFlight = false;
+    changeView = 'document'; sent = false;
+    batchKey = 'good'; batchChecked = false; infoAsked = false; decided = null; aiRun = false;
     reached = {}; lastNotif = null; ioEntries = []; auditEntries = [];
-    batchKey = 'good'; batchChecked = false; infoAsked = false; decided = null;
     store.reset();
     renderAudit();
-    el('log').innerHTML = '';
     el('io-list').innerHTML = '';
     el('inspect-focus').innerHTML = '';
-    hide('payoff'); el('payoff').innerHTML = '';
-    hide('future'); el('future').innerHTML = '';
     setIoCount();
     closeInspect();
-    refresh();
+    render();
   }
 
   /* ===================== BACKEND TOGGLE (mock/local/live) =============== */
@@ -794,8 +785,8 @@
       return;
     }
     if (ev.target.closest('#wl-decode')) { decodeWrapperBinary(); return; }
-    if (ev.target.closest('#future-toggle')) { renderFuture(); return; }
     var ins = ev.target.closest('[data-inspect]'); if (ins) { inspectKey(ins.getAttribute('data-inspect')); return; }
+    var vw = ev.target.closest('[data-view]'); if (vw) { setView(vw.getAttribute('data-view')); return; }
     var b = ev.target.closest('[data-batch]'); if (b) { setBatch(b.getAttribute('data-batch')); return; }
     var dec = ev.target.closest('[data-decision]'); if (dec) { onDecision(dec.getAttribute('data-decision')); return; }
     var a = ev.target.closest('[data-act]'); if (a) { runAct(a.getAttribute('data-act')); return; }
@@ -804,7 +795,6 @@
   el('resetbtn').addEventListener('click', resetAll);
   el('inspect-toggle').addEventListener('click', toggleInspect);
   el('inspect-close').addEventListener('click', closeInspect);
-  el('view-spec').addEventListener('click', function () { inspectFocus('Specification — Velexa 175 mg (rendered)', APIX.pqi.renderSpecHtml(), true); openInspect(); });
   el('about-btn').addEventListener('click', function () { el('inspect-focus').innerHTML = ABOUT_HTML; openInspect(); });
   el('backend-mock').addEventListener('click', function () { setBackend('mock'); });
   el('backend-live').addEventListener('click', function () { setBackend('hapi'); });
@@ -812,5 +802,5 @@
   el('local-base').addEventListener('change', function () { syncLocalBase(); if (isLocal()) resetAll(); });
 
   reflectBackend();
-  refresh();
+  render();
 })();
