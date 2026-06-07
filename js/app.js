@@ -130,6 +130,48 @@
       '</div>';
   }
 
+  /* The shared regulatory case number the engine stamps on submit (real). */
+  function caseNo() {
+    try {
+      var id = (store.task.identifier || []).filter(function (i) { return i.system === APIX.SYS.procedureSystem; })[0];
+      return id ? id.value : '215123/S-005';
+    } catch (e) { return '215123/S-005'; }
+  }
+
+  /* What APIX actually does on "send", and why it's a step-change. This is the
+     heart of the talk — keep it concrete and lay-readable, never a feature dump. */
+  function apixStoryHtml() {
+    var steps = [
+      ['Packaged as structured data', 'every limit, method and result as fields a computer can read — not prose buried in a PDF.'],
+      ['Sent over a live API', 'a real call straight into FDA’s system — no portal upload, no email, no posting paper.'],
+      ['Tracked as one shared case', 'applicant and FDA watch the very same record — ending the “where’s my submission?” emails.'],
+      ['Updates pushed back in real time', 'every status change lands the instant FDA makes it — nobody logs in to check.']
+    ];
+    var li = steps.map(function (s, i) {
+      return '<li style="animation-delay:' + (i * 90) + 'ms"><span class="ax-n">' + (i + 1) + '</span>' +
+        '<div><b>' + esc(s[0]) + '</b><span>' + esc(s[1]) + '</span></div></li>';
+    }).join('');
+
+    var rows = [
+      ['Format', 'A PDF document', 'Structured data'],
+      ['Delivery', 'Uploaded to a portal', 'A live API call'],
+      ['Checking', 'Re-typed &amp; read by hand', 'Read &amp; checked by machine'],
+      ['Status', 'Chase it by email', 'Pushed in real time']
+    ];
+    var ba = rows.map(function (r) {
+      return '<tr><th>' + r[0] + '</th><td class="ba-old">' + r[1] + '</td><td class="ba-new">' + r[2] + '</td></tr>';
+    }).join('');
+
+    return '<h2 class="b-head">SynthPharma didn’t email a PDF. APIX sent it as live data.</h2>' +
+      '<p class="apix-case">Tracked as case <code>' + esc(caseNo()) + '</code>, shared by both sides. ' +
+        '<button class="link-btn" data-inspect="wrapper">{ } see the live API call &amp; payload</button></p>' +
+      '<ol class="apix-steps">' + li + '</ol>' +
+      '<div class="apix-why">' +
+        '<div class="apix-why-cap">Why it’s a game-changer</div>' +
+        '<table class="ba"><thead><tr><th></th><th>The old way</th><th>With APIX</th></tr></thead>' +
+        '<tbody>' + ba + '</tbody></table></div>';
+  }
+
   function renderBeat2() {
     var w = batchChecked ? waterCheck() : null;
     var resultHtml = '';
@@ -148,7 +190,8 @@
 
     el('beat').innerHTML =
       exchangeShell(sent, sent) +
-      '<h2 class="b-head">FDA’s system reads the data and checks a real batch — automatically.</h2>' +
+      apixStoryHtml() +
+      '<h2 class="b-head chk-lead">And because it’s data, FDA’s system checks a real batch — automatically.</h2>' +
       '<div class="chk-pick">' +
         '<button class="pick-opt' + (batchKey === 'good' ? ' on' : '') + '" data-batch="good">Representative batch</button>' +
         '<button class="pick-opt' + (batchKey === 'bad' ? ' on' : '') + '" data-batch="bad">Out-of-spec batch</button>' +
