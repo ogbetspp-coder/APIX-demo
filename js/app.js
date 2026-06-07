@@ -453,7 +453,9 @@
     if (!t) { inspectFocus('Task', { resourceType: 'Task' }); return; }
     var bizCode = (t.businessStatus && t.businessStatus.coding && t.businessStatus.coding[0]) ? t.businessStatus.coding[0].code : '';
     var bizDisp = (t.businessStatus && t.businessStatus.coding && t.businessStatus.coding[0]) ? t.businessStatus.coding[0].display : bizCode;
-    var codeDisp = (t.code && t.code.coding && t.code.coding[0]) ? t.code.coding[0].display : '';
+    var codeCode = (t.code && t.code.coding && t.code.coding[0]) ? t.code.coding[0].code : '';
+    var codeDisp = codeCode === 'supplement' ? 'Prior Approval Supplement'
+      : ((t.code && t.code.coding && t.code.coding[0]) ? t.code.coding[0].display : '');
     var procNo = '';
     (t.identifier || []).forEach(function (id) {
       if (id.type && id.type.coding && id.type.coding[0] && id.type.coding[0].code === 'apixregulatorprocedureno') procNo = id.value;
@@ -491,7 +493,9 @@
     var docref = store.get('DocumentReference/docref-spec-fhir');
     var bin = store.get('Binary/binary-spec-fhir');
     var bizDisp = (t && t.businessStatus && t.businessStatus.coding && t.businessStatus.coding[0]) ? t.businessStatus.coding[0].display : '—';
-    var codeDisp = (t && t.code && t.code.coding && t.code.coding[0]) ? t.code.coding[0].display : 'Prior Approval Supplement';
+    var codeCode2 = (t && t.code && t.code.coding && t.code.coding[0]) ? t.code.coding[0].code : '';
+    var codeDisp = codeCode2 === 'supplement' ? 'Prior Approval Supplement'
+      : ((t && t.code && t.code.coding && t.code.coding[0]) ? t.code.coding[0].display : 'Prior Approval Supplement');
     var att = docref && docref.content ? docref.content[0].attachment : {};
     var b64 = (bin && bin.data) || '';
     var b64short = b64.length > 88 ? b64.slice(0, 88) + '…' : b64;

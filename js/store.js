@@ -482,7 +482,7 @@ APIX.store = {
       businessStatus: { coding: [{ system: APIX.SYS.businessStatus, code: 'submitted', display: 'Submitted' }] },
       intent: 'proposal',
       priority: 'routine',
-      code: { coding: [{ system: APIX.SYS.taskCode, code: 'supplement', display: 'Prior Approval Supplement' }] },
+      code: { coding: [{ system: APIX.SYS.taskCode, code: 'supplement', display: 'Supplement / Variation' }] },
       focus: { reference: 'MedicinalProductDefinition/' + APIX.seed.product.id, display: APIX.seed.product.name[0].productName },
       authoredOn: now,
       lastModified: now,
