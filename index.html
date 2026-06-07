@@ -56,6 +56,11 @@
         <span class="party-role">Applicant system</span>
       </div>
       <div class="party-body">
+        <div class="panel" id="authoring-panel">
+          <div class="panel-head">Author — PQI <span class="panel-tag">one source → two faces</span></div>
+          <div class="panel-body" id="authoring-body"></div>
+        </div>
+
         <div class="case-status">
           <div class="cs-label">Case status</div>
           <div class="cs-value" id="applicant-status">Not yet submitted</div>
@@ -79,8 +84,8 @@
     <!-- ===== CENTER — Exchange (the star) ===== -->
     <section class="wire" id="exchange">
       <div class="wire-head">
-        <span class="wire-title">Exchange — live FHIR</span>
-        <span class="wire-sub">real HTTP request / response stream</span>
+        <span class="wire-title" id="wire-title">Exchange — mock FHIR</span>
+        <span class="wire-sub" id="wire-sub">simulated (in-memory mock server)</span>
         <span class="panel-count" id="exch-count">0</span>
       </div>
       <div class="wire-body" id="exch-log">

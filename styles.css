@@ -345,3 +345,74 @@ table.grid, .val-table, .ectd-table, .audit-table { border-collapse: collapse; }
   .sb-task { border-right: none; border-bottom: 1px solid var(--line); }
   .sb-audit { flex-basis: auto; }
 }
+
+/* ============================ THE FAN (Act-1 authoring) ================= */
+.panel-tag { float: right; font-size: 9.5px; font-weight: 600; color: var(--ink-faint);
+  text-transform: uppercase; letter-spacing: .4px; padding-top: 2px; }
+#authoring-panel .panel-body { padding: 12px 10px; }
+.fan { display: flex; flex-direction: column; align-items: stretch; gap: 0; }
+.fan-srcs { display: flex; flex-direction: column; gap: 6px; }
+.src-chip { display: flex; flex-direction: column; gap: 1px; background: var(--bg);
+  border: 1px solid var(--line); border-left: 3px solid var(--ink-faint); border-radius: var(--radius);
+  padding: 6px 9px; }
+.fan-srcs .src-chip:nth-child(1) { border-left-color: var(--org-meth); }
+.fan-srcs .src-chip:nth-child(2) { border-left-color: var(--org-stab); }
+.fan-srcs .src-chip:nth-child(3) { border-left-color: var(--org-lims); }
+.src-name { font-size: 12px; font-weight: 700; color: var(--ink); }
+.src-role { font-size: 10.5px; color: var(--ink-soft); }
+.fan-arrow { position: relative; text-align: center; padding: 12px 0 11px; }
+.fan-arrow::before { content: ""; position: absolute; left: 50%; top: 0; width: 1px; height: 100%;
+  background: var(--line-strong); transform: translateX(-50%); z-index: 0; }
+.fan-arrow span { position: relative; z-index: 1; background: var(--bg-alt); padding: 1px 7px;
+  font-size: 9.5px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .3px; }
+.fan-converge::before { clip-path: polygon(0 0, 100% 0, 50% 100%); background: var(--line-strong); width: 70%; }
+.fan-bundle { text-align: center; background: #08443b; color: #fff; border-radius: var(--radius);
+  padding: 10px 8px; box-shadow: 0 1px 4px rgba(0,0,0,.14); }
+.fan-bundle-t { display: block; font-size: 14px; font-weight: 800; letter-spacing: .2px; }
+.fan-bundle-s { display: block; font-size: 10.5px; color: #bfe3da; }
+.fan-faces { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.face-card { display: flex; flex-direction: column; gap: 2px; text-align: left; cursor: pointer;
+  font-family: inherit; background: #2f2a64; color: #fff; border: 1px solid #2f2a64;
+  border-radius: var(--radius); padding: 8px 9px; transition: transform .08s, box-shadow .12s; }
+.face-card span { font-size: 12px; font-weight: 700; }
+.face-card em { font-size: 10px; font-style: normal; color: #c7c3e8; }
+.face-card:hover { transform: translateY(-1px); box-shadow: 0 2px 8px rgba(47,42,100,.3); }
+
+/* ===================== DOCUMENT ⇄ FHIR TOGGLE (the PQI proof) =========== */
+.face-toggle { display: inline-flex; border: 1px solid var(--line-strong); border-radius: var(--radius);
+  overflow: hidden; margin-bottom: 8px; }
+.face-opt { font-family: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+  background: var(--bg); color: var(--ink-soft); border: none; padding: 7px 13px; }
+.face-opt + .face-opt { border-left: 1px solid var(--line); }
+.face-opt.on { background: var(--navy); color: #fff; }
+.face-caption { font-size: 12px; color: var(--ink-soft); margin: 0 0 10px; }
+.face-view { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; background: var(--bg); }
+.spec-hl { background: #fff1c2; color: var(--navy); font-weight: 800; padding: 0 4px;
+  border-radius: 3px; box-shadow: inset 0 -2px 0 #ffd95e; }
+/* Make the SAME value pop in the Document face too. */
+.face-doc .ectd-table .row-changed .diff-new { background: #fff1c2; padding: 0 4px; border-radius: 3px;
+  box-shadow: inset 0 -2px 0 #ffd95e; }
+.row-badge { display: inline-block; font-size: 9px; font-weight: 800; letter-spacing: .5px;
+  color: #fff; background: var(--navy); border-radius: 3px; padding: 0 4px; margin-left: 4px; vertical-align: 1px; }
+.face-fhir { font-size: 12.5px; }
+.ff-head { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px;
+  color: var(--ink-soft); border-bottom: 1px solid var(--line); padding-bottom: 6px; margin-bottom: 8px; }
+.ff-row { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; border-bottom: 1px dotted var(--line); }
+.ff-k { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: var(--ink-faint); }
+.ff-derive { margin-top: 10px; background: var(--bg-alt); border: 1px solid var(--line);
+  border-left: 3px solid var(--navy); border-radius: var(--radius); padding: 9px 11px; font-size: 12.5px; line-height: 1.6; }
+.ff-derive-note { display: block; font-size: 11px; color: var(--ink-soft); margin-top: 3px; }
+.ff-derive-note em { font-style: italic; }
+.face-fhir .link-btn { margin-top: 9px; }
+
+/* ===================== EXCHANGE — collapsed $translate group ============ */
+.xrow-group .xrow-method { background: #5b4b8a; }
+.xg-item { display: flex; align-items: center; gap: 8px; padding: 3px 0 3px 4px; font-size: 12px; }
+.xg-item code { background: var(--box-bg); border-radius: 3px; padding: 0 5px; color: var(--ink); }
+.xg-arr { color: var(--ink-faint); }
+
+/* ===================== DRAMATIC FAIL (the compute proof) ================ */
+.val-banner-fail { font-size: 13.5px; letter-spacing: .2px; box-shadow: 0 1px 4px rgba(179,38,30,.28);
+  display: flex; align-items: center; gap: 7px; }
+.val-banner-fail::before { content: "\2715"; font-weight: 800; font-size: 14px; }
+.val-table .val-fail-row td.fail { background: var(--red); color: #fff; }

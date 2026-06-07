@@ -30,9 +30,9 @@
   //      → clock-stop → clock-restart → approved | rejected
   var state = 'idle';
   var inFlight = false;        // a handler is awaiting (guards double-clicks)
-  var batchKey = 'good';       // 'good' | 'bad' — the screened batch
-  var batchScreened = false;   // the conformance screen has been run at least once
-  var specOpen = false;        // FDA "Open specification" toggled
+  var batchKey = 'bad';        // 'good' | 'bad' — defaults to OUT-OF-SPEC for the dramatic fail
+  var batchScreened = true;    // show the screen immediately when the case opens
+  var specFace = 'doc';        // 'doc' | 'fhir' — the active face in the spec toggle
   var infoAsked = false;       // an Information Request round was opened
   var answered = false;        // the applicant responded to the Information Request
   var decided = null;          // 'approve' | 'reject'
@@ -200,16 +200,72 @@
     '</div>';
   }
 
+  // Consecutive ConceptMap $translate calls collapse into ONE expandable row
+  // ("Harmonize · N local codes → PQI terms · 200") so the wire reads as a
+  // sequence of distinct steps, not a wall of identical rows.
+  var translateGroup = null;   // { el, items: [] } while a run of $translates is live
+  function isTranslate(d) { return /\$translate/.test((d.request && d.request.url) || ''); }
+
+  function translateGroupHtml(g) {
+    var items = g.items.map(function (e) {
+      var p = (e.response && e.response.body) || {};
+      var src = '', tgt = '';
+      try {
+        (p.parameter || []).forEach(function (pr) {
+          if (pr.name === 'match' && pr.part) pr.part.forEach(function (pp) {
+            if (pp.name === 'concept' && pp.valueCoding) tgt = pp.valueCoding.display || pp.valueCoding.code;
+          });
+        });
+        var q = ((e.request && e.request.url) || '').split('?')[1] || '';
+        var m = /code=([^&]+)/.exec(q); if (m) src = decodeURIComponent(m[1]);
+      } catch (x) { /* best effort */ }
+      return '<div class="xg-item"><code>' + esc(src || '—') + '</code><span class="xg-arr">→</span><span>' + esc(tgt || 'PQI term') + '</span></div>';
+    }).join('');
+    return '<div class="xrow xrow-out xrow-group">' +
+      '<button class="xrow-sum">' +
+        '<span class="xrow-time">' + esc(ts(g.items[0].ts)) + '</span>' +
+        '<span class="xrow-dir">→</span>' +
+        '<span class="xrow-method io-method">MAP</span>' +
+        '<span class="xrow-path">ConceptMap/$translate</span>' +
+        '<span class="xrow-status io-ok">200</span>' +
+        '<span class="xrow-res"><code>×' + g.items.length + '</code></span>' +
+        '<span class="xrow-note">Harmonize · ' + g.items.length + ' local codes → PQI controlled terms.</span>' +
+      '</button>' +
+      '<div class="xrow-detail" hidden><div class="io-sec">Mappings</div>' + items + '</div>' +
+    '</div>';
+  }
+
   function addIo(detail) {
     ioEntries.push(detail);
     el('exch-count').textContent = ioEntries.length;
     var log = el('exch-log');
     var emp = log.querySelector('.empty');
     if (emp) emp.remove();
-    var wrap = document.createElement('div');
-    wrap.innerHTML = renderExchangeRow(detail);
-    var rowEl = wrap.firstChild;
-    log.appendChild(rowEl);
+
+    if (isTranslate(detail)) {
+      // Start a new group only if the previous row isn't our live group.
+      if (!translateGroup || translateGroup.el !== log.lastChild) {
+        translateGroup = { items: [], el: null };
+        var gw = document.createElement('div');
+        gw.innerHTML = translateGroupHtml(translateGroup);
+        translateGroup.el = gw.firstChild;
+        log.appendChild(translateGroup.el);
+      }
+      translateGroup.items.push(detail);
+      var open = translateGroup.el.querySelector('.xrow-detail');
+      var wasOpen = open && !open.hidden;
+      var nw = document.createElement('div');
+      nw.innerHTML = translateGroupHtml(translateGroup);
+      var fresh = nw.firstChild;
+      if (wasOpen) fresh.querySelector('.xrow-detail').hidden = false;
+      log.replaceChild(fresh, translateGroup.el);
+      translateGroup.el = fresh;
+    } else {
+      translateGroup = null;
+      var wrap = document.createElement('div');
+      wrap.innerHTML = renderExchangeRow(detail);
+      log.appendChild(wrap.firstChild);
+    }
     log.scrollTop = log.scrollHeight;
   }
 
@@ -287,10 +343,10 @@
     if (!open) return;
     var body = '';
 
-    // Open specification — the human-readable structured finished-product spec.
+    // Open specification — the same structured spec, Document ⇄ FHIR (same value).
     body += '<div class="ad-sec">' +
-      '<button class="link-btn" data-act="spec">' + (specOpen ? 'Hide' : 'Open') + ' specification (3.2.P.5.1)</button>' +
-      (specOpen ? '<div class="ad-spec">' + APIX.pqi.renderSpecHtml() + '</div>' : '') +
+      '<button class="act-btn act-next" data-act="spec"><span class="act-label">Open specification — Document ⇄ FHIR</span>' +
+        '<span class="act-hint io-method-inline">same NDSRI limit in both faces · computed AI ÷ MDD</span></button>' +
     '</div>';
 
     // Screen batch — choose representative vs out-of-spec; run the conformance check.
@@ -450,6 +506,7 @@
   /* ============================ RENDER ALL ============================== */
   function render() {
     el('case-no').textContent = (state === 'idle') ? '—' : caseNo();
+    renderAuthoring();
     renderApplicant();
     renderAuthority();
     renderStateBar();
@@ -544,7 +601,81 @@
     batchScreened = true;
     renderAuthorityDetail();
   }
-  function doToggleSpec() { specOpen = !specOpen; renderAuthorityDetail(); }
+  /* ---- The fan: 3 sources → 1 PQI bundle → 2 faces (Act-1 authoring) ---- */
+  function shortSrc(system) {
+    if (/Method/i.test(system)) return 'Methods';
+    if (/Stability/i.test(system)) return 'Stability';
+    if (/LIMS/i.test(system)) return 'LIMS';
+    return system.split('—')[0].trim();
+  }
+  function renderAuthoring() {
+    var host = el('authoring-body'); if (!host) return;
+    var srcs = (APIX.pqi.sources || []).map(function (s) {
+      return '<div class="src-chip"><span class="src-name">' + esc(shortSrc(s.system)) + '</span>' +
+        '<span class="src-role">' + esc(s.role || s.note || '') + '</span></div>';
+    }).join('');
+    host.innerHTML =
+      '<div class="fan">' +
+        '<div class="fan-srcs">' + srcs + '</div>' +
+        '<div class="fan-arrow fan-converge"><span>harmonize · ConceptMap $translate</span></div>' +
+        '<div class="fan-bundle"><span class="fan-bundle-t">PQI bundle</span>' +
+          '<span class="fan-bundle-s">one structured spec</span></div>' +
+        '<div class="fan-arrow fan-diverge"><span>renders into two faces</span></div>' +
+        '<div class="fan-faces">' +
+          '<button class="face-card" data-face-open="doc"><span>eCTD 3.2.P.5.1</span><em>the human document</em></button>' +
+          '<button class="face-card" data-face-open="fhir"><span>Structured FHIR</span><em>the machine data</em></button>' +
+        '</div>' +
+      '</div>';
+  }
+
+  /* ---- The toggle: same NDSRI limit highlighted in Document AND FHIR ---- */
+  function ndsriOD() {
+    if (!APIX.pqi.bundle) APIX.pqi.normalize();
+    var ods = (APIX.pqi.bundle.entry || []).map(function (e) { return e.resource; })
+      .filter(function (r) {
+        return r.resourceType === 'ObservationDefinition' && r.code && r.code.coding &&
+          r.code.coding[0] && r.code.coding[0].code === 'NDSRI';
+      });
+    return ods[0] || null;
+  }
+  function ndsriFhirHtml() {
+    var n = APIX.pqi.ndsri || { ai: 100, mdd: 350, limit: 0.29 };
+    var limit = n.limit.toFixed(2);
+    return '<div class="face-fhir">' +
+      '<div class="ff-head">ObservationDefinition · N-Nitroso-velexate (NDSRI)</div>' +
+      '<div class="ff-row"><span class="ff-k">code</span><span>N-Nitroso-velexate (NDSRI)</span></div>' +
+      '<div class="ff-row"><span class="ff-k">method</span><span>LC-MS/MS</span></div>' +
+      '<div class="ff-row"><span class="ff-k">qualifiedValue.range.high</span>' +
+        '<span><mark class="spec-hl">' + limit + ' ppm</mark></span></div>' +
+      '<div class="ff-derive">computed: acceptable intake <strong>' + n.ai + ' ng/day</strong> ' +
+        '&divide; max daily dose <strong>' + n.mdd + ' mg/day</strong> = <mark class="spec-hl">' + limit + ' ppm</mark>' +
+        '<span class="ff-derive-note">a value a PDF states; structured data <em>derives</em></span></div>' +
+      '<button class="link-btn" data-act="ndsri-json">view full ObservationDefinition { }</button>' +
+    '</div>';
+  }
+  function specFacesHtml(face) {
+    var toggle = '<div class="face-toggle" role="group" aria-label="Spec face">' +
+      '<button class="face-opt' + (face === 'doc' ? ' on' : '') + '" data-face="doc">Document · eCTD 3.2.P.5.1</button>' +
+      '<button class="face-opt' + (face === 'fhir' ? ' on' : '') + '" data-face="fhir">Structured FHIR</button>' +
+    '</div>';
+    var caption = '<p class="face-caption">One source, two faces — the <strong>NDSRI limit (0.29 ppm)</strong> is the same value in both.</p>';
+    var view = (face === 'fhir') ? ndsriFhirHtml() : APIX.pqi.renderSpecHtml();
+    return toggle + caption + '<div class="face-view face-' + face + '">' + view + '</div>';
+  }
+  function openSpec(face) {
+    specFace = face || specFace || 'doc';
+    openModal('Specification — Document ⇄ FHIR', specFacesHtml(specFace));
+  }
+  function setFace(face) {
+    specFace = face;
+    el('modal-content').innerHTML = specFacesHtml(specFace);
+  }
+  function doToggleSpec() { openSpec(specFace); }
+  function viewNdsriJson() {
+    var od = ndsriOD();
+    openModal('ObservationDefinition — N-Nitroso-velexate (NDSRI)',
+      '<pre class="modal-json">' + APIX.highlight(od || {}) + '</pre>');
+  }
 
   // WS1 — verify the spec signature against the (possibly tampered) Bundle.
   async function doVerify() {
@@ -602,7 +733,7 @@
   /* ============================ RESET ================================== */
   function resetAll() {
     state = 'idle'; inFlight = false;
-    batchKey = 'good'; batchScreened = false; specOpen = false;
+    batchKey = 'bad'; batchScreened = true; specFace = 'doc'; translateGroup = null;
     infoAsked = false; answered = false; decided = null; worklistOpen = false; sigVerify = null;
     reached = {}; lastNotif = null; inbox = []; ioEntries = []; auditEntries = [];
     store.reset();
@@ -635,6 +766,13 @@
     if (live) { sb.textContent = 'hapi.fhir.org/baseR5'; sb.className = 'server-base sb-live'; }
     else if (local) { sb.textContent = APIX.config.localBase; sb.className = 'server-base sb-local'; }
     else { sb.textContent = 'in-memory mock server'; sb.className = 'server-base'; }
+    // Keep the Exchange header honest: never headline "live / real HTTP" on Mock.
+    var wt = el('wire-title'), ws = el('wire-sub');
+    if (wt && ws) {
+      if (live) { wt.textContent = 'Exchange — live FHIR'; ws.textContent = 'real HTTP · hapi.fhir.org/baseR5'; }
+      else if (local) { wt.textContent = 'Exchange — live FHIR'; ws.textContent = 'real HTTP · ' + APIX.config.localBase; }
+      else { wt.textContent = 'Exchange — mock FHIR'; ws.textContent = 'simulated (in-memory mock server)'; }
+    }
   }
   function setBackend(backend) {
     if (!APIX.config || APIX.config.backend === backend) return;
@@ -710,6 +848,10 @@
     // Worklist row toggle.
     if (ev.target.closest('[data-wl]')) { worklistOpen = !worklistOpen; renderAuthority(); return; }
 
+    // Fan face cards (open the spec modal on that face) + the Document⇄FHIR toggle.
+    var fo = ev.target.closest('[data-face-open]'); if (fo) { openSpec(fo.getAttribute('data-face-open')); return; }
+    var fc = ev.target.closest('[data-face]'); if (fc) { setFace(fc.getAttribute('data-face')); return; }
+
     // Batch picker / spec toggle (authority detail).
     var bp = ev.target.closest('[data-batch]'); if (bp) { doScreenBatch(bp.getAttribute('data-batch')); return; }
 
@@ -731,7 +873,13 @@
 
     // Generic act buttons (spec toggle lives here too).
     var a = ev.target.closest('[data-act]');
-    if (a) { var av = a.getAttribute('data-act'); if (av === 'spec') doToggleSpec(); else if (av === 'sig-json') viewSignature(); return; }
+    if (a) {
+      var av = a.getAttribute('data-act');
+      if (av === 'spec') doToggleSpec();
+      else if (av === 'sig-json') viewSignature();
+      else if (av === 'ndsri-json') viewNdsriJson();
+      return;
+    }
 
     // Action buttons by id.
     var id = ev.target.closest('button') && ev.target.closest('button').id;
@@ -759,6 +907,7 @@
   el('backend-local').addEventListener('click', function () { setBackend('local'); });
   el('local-base').addEventListener('change', function () { syncLocalBase(); if (isLocal()) resetAll(); });
 
+  APIX.pqi.normalize();          // build the PQI Bundle up front (fan / FHIR face)
   reflectBackend();
   setConn('idle', 'Not connected · mock');
   renderAudit();
