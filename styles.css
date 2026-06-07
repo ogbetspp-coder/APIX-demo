@@ -93,7 +93,28 @@ code, pre { font-family: Consolas, "Lucida Console", "Courier New", monospace; }
 .actor { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .7px; color: var(--navy); }
 .b-head { font-size: 28px; line-height: 1.3; font-weight: 700; letter-spacing: -.3px; margin: 10px 0 0; }
 .b-why { margin: 22px 0 0; color: var(--ink-soft); font-size: 15px; }
+.b-lead { margin: 14px 0 0; font-size: 16px; line-height: 1.55; color: var(--ink-soft); }
 .b-controls { margin-top: 28px; display: flex; gap: 12px; flex-wrap: wrap; }
+
+/* human-in-the-loop note (Beat 3) — machine screens, human assesses */
+.hitl { margin: 16px 0 0; font-size: 14px; color: var(--ink-soft); line-height: 1.55;
+  border-left: 3px solid var(--line-strong); padding-left: 12px; }
+/* real-server note (Beat 2) */
+.server-note { margin: 14px 0 0; font-size: 13px; color: var(--ink-soft); line-height: 1.55; }
+.server-note code, .livebar code { font-family: Consolas, monospace; font-size: 12px;
+  background: var(--box-bg); border: 1px solid var(--box-border); border-radius: 3px; padding: 1px 6px; color: var(--ink); }
+
+/* live/local server bar — the anti-vaporware star */
+.livebar { display: flex; align-items: center; gap: 9px; justify-content: center; flex-wrap: wrap;
+  padding: 9px 24px; font-size: 13px; color: var(--ink); border-bottom: 1px solid var(--line); }
+.livebar-live { background: var(--red-bg); border-bottom-color: var(--red); }
+.livebar-live code { background: #fff; border-color: var(--red); color: var(--red); }
+.livebar-local { background: var(--green-bg); border-bottom-color: var(--green); }
+.livebar-local code { background: #fff; border-color: var(--green); color: var(--green); }
+.lb-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); animation: lb-pulse 1.4s ease-in-out infinite; }
+.lb-dot-local { background: var(--green); animation: none; }
+@keyframes lb-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .lb-dot { animation: none; } }
 
 .link-btn { border: none; background: none; color: var(--link); cursor: pointer; font-size: 14px;
   font-family: inherit; padding: 0; }

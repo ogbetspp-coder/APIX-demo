@@ -111,8 +111,10 @@
       '</dl>';
 
     el('beat').innerHTML =
-      '<div class="actor">SynthPharma · drug maker</div>' +
+      '<div class="actor">SynthPharma · sponsor</div>' +
       '<h2 class="b-head">Tightening a quality limit on Velexa tablets.</h2>' +
+      '<p class="b-lead">Today a change like this travels as a PDF inside an eCTD submission — ' +
+        're-keyed by hand, weeks in a queue, status chased by email. Here it is as data.</p>' +
       '<div class="toggle" role="group" aria-label="View">' +
         '<button class="tg-opt' + (changeView === 'document' ? ' on' : '') + '" data-view="document">Document</button>' +
         '<button class="tg-opt' + (changeView === 'data' ? ' on' : '') + '" data-view="data">Data</button>' +
@@ -175,6 +177,10 @@
     return '<h2 class="b-head">SynthPharma didn’t email a PDF. APIX sent it as live data.</h2>' +
       '<p class="apix-case">Tracked as case <code>' + esc(caseNo()) + '</code>, shared by both sides. ' +
         '<button class="link-btn" data-inspect="wrapper">{ } see the live API call &amp; payload</button></p>' +
+      '<p class="server-note">' + (isLive()
+        ? 'That was a <strong>real</strong> HTTP call to <code>hapi.fhir.org/baseR5</code> — a public FHIR R5 server, not a mock. Watch the request &amp; response in Inspect.'
+        : 'Shown on a mock server for pacing — flip to <strong>Live</strong> (top right) to run this exact exchange against a real FHIR R5 server, <code>hapi.fhir.org/baseR5</code>.') +
+      '</p>' +
       '<ol class="apix-steps">' + li + '</ol>' +
       '<div class="apix-why">' +
         '<div class="apix-why-cap">Why it’s a game-changer</div>' +
@@ -184,6 +190,7 @@
 
   function renderBeat2() {
     el('beat').innerHTML =
+      '<div class="actor">SynthPharma · submitting to FDA</div>' +
       exchangeShell(sent, sent) +
       apixStoryHtml() +
       '<div class="b-controls">' +
@@ -248,7 +255,9 @@
           '<div class="ev-verdict"></div></div>' +
         evalRowsHtml(batchKey, checkDone ? 'all' : 0) +
       '</div>' +
-      (checkDone ? verdictHtml(batchKey) : '') +
+      (checkDone ? verdictHtml(batchKey) +
+        '<p class="hitl">The system screens and flags — it doesn’t decide. ' +
+        'A human reviewer still makes the scientific assessment.</p>' : '') +
       '<div class="b-controls">' + switchBtn + nextBtn + '</div>';
   }
 
@@ -414,7 +423,7 @@
   function renderBeat5() {
     var actions = decided ? payoffHtml() : decisionCardsHtml();
     el('beat').innerHTML =
-      '<div class="actor">FDA</div>' +
+      '<div class="actor">FDA · decision</div>' +
       '<h2 class="b-head">FDA decides — on the evidence.</h2>' +
       decisionBasisHtml() +
       aiPanelHtml() +
@@ -978,6 +987,16 @@
     el('backend-local').classList.toggle('on', local);
     el('live-indicator').hidden = !live;
     el('local-base').hidden = !local;
+    var lb = el('livebar');
+    if (lb) {
+      lb.hidden = !live && !local;
+      lb.classList.toggle('livebar-live', live);
+      lb.classList.toggle('livebar-local', local);
+      if (live) lb.innerHTML = '<span class="lb-dot"></span><strong>LIVE</strong> — real HTTP calls to a ' +
+        'public FHIR R5 server <code>hapi.fhir.org/baseR5</code>. Open <strong>Inspect</strong> to watch each request &amp; response.';
+      else if (local) lb.innerHTML = '<span class="lb-dot lb-dot-local"></span><strong>LOCAL</strong> — ' +
+        'running against your own FHIR server.';
+    }
   }
   function setBackend(backend) {
     if (!APIX.config || APIX.config.backend === backend) return;
