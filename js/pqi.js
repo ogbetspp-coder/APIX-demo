@@ -27,7 +27,7 @@ APIX.pqi = (function () {
     label: 'End-of-shelf-life Water Content limit',
     before: 'NMT 2.0% w/w',
     after: 'NMT 1.5% w/w',
-    rationale: 'Tightened on updated 36-month stability data; a stability-indicating limit, filed as a Type IB variation (B.II.d.1).'
+    rationale: 'Tightened on updated 36-month stability data; a stability-indicating limit, filed as a Prior Approval Supplement to the NDA.'
   };
 
   /* ---- Mocked source systems (heterogeneous, "messy") ------------------- */
@@ -285,8 +285,7 @@ APIX.pqi = (function () {
       '<div class="ectd-doc">' +
         '<div class="ectd-head"><span>MODULE 3.2.P.5.1</span><span>SPECIFICATION — DRUG PRODUCT</span></div>' +
         '<h2>' + APIX.seed.product.name[0].productName + '</h2>' +
-        '<p class="ectd-meta">Marketing Authorisation Holder: SynthPharma AG &nbsp;·&nbsp; MPID: ' +
-          APIX.seed.product.identifier[0].value + ' &nbsp;·&nbsp; Variation: Type IB (B.II.d.1)</p>' +
+        '<p class="ectd-meta">Applicant: SynthPharma AG &nbsp;·&nbsp; NDA 215123 &nbsp;·&nbsp; Prior Approval Supplement (drug product specification)</p>' +
         '<table class="ectd-table"><thead><tr><th>Test</th><th>Analytical Method</th>' +
           '<th>Acceptance Criteria (Release)</th><th>Acceptance Criteria (Shelf Life)</th></tr></thead>' +
           '<tbody>' + rows + '</tbody></table>' +

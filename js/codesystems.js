@@ -24,8 +24,8 @@ APIX.SYS = {
   topicCreate: 'http://hl7.org/fhir/uv/example/SubscriptionTopic/TaskCreationWithOrganizationAssignedFilter',
   // Non-example systems (the validator rejects example.org/.example URLs on these slices).
   taskIdSystem: 'urn:ietf:rfc:3986',
-  procedureSystem: 'https://spor.ema.europa.eu/v1/procedures',
-  groupIdSystem: 'https://spor.ema.europa.eu/v1/workflow-group',
+  procedureSystem: 'https://www.fda.gov/drugs/application-supplement-number',
+  groupIdSystem: 'https://www.fda.gov/drugs/review-thread',
   docRefIdSystem: 'https://synthpharma.example/fhir/document-set-id',
   docVerSystem: 'https://synthpharma.example/fhir/document-version',
   profile: {

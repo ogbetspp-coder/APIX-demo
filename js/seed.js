@@ -1,9 +1,9 @@
 /*
  * Seed FHIR R5 resources, modelled faithfully on the APIX IG example artifacts.
  *
- * Scenario: SynthPharma AG submits a routine Type IB variation to the finished
- * product specification of "Velexa 175 mg film-coated tablets" to a generic
- * Health Authority, and tracks it in real time.
+ * Scenario: SynthPharma AG submits a Prior Approval Supplement to the finished
+ * drug-product specification of "Velexa 175 mg film-coated tablets" to FDA,
+ * and tracks it in real time.
  *
  * APIX 0.1.0 exchanges the submission as a Task whose inputs point to
  * DocumentReferences (-> Binary). MedicinalProductDefinition is NOT profiled by
@@ -24,9 +24,9 @@ APIX.seed = {
     resourceType: 'Organization',
     id: 'org-synthpharma-ag',
     meta: { profile: [APIX.SYS.profile.org] },
-    identifier: [{ use: 'official', system: 'https://spor.ema.europa.eu/v1/locations', value: 'LOC-100012345' }],
+    identifier: [{ use: 'official', system: 'urn:oid:2.16.840.1.113883.4.82', value: '150483920' }],
     active: true,
-    type: [{ coding: [{ system: 'http://terminology.hl7.org/CodeSystem/organization-type', code: 'other', display: 'Other' }], text: 'Marketing Authorisation Holder' }],
+    type: [{ coding: [{ system: 'http://terminology.hl7.org/CodeSystem/organization-type', code: 'other', display: 'Other' }], text: 'Applicant (NDA holder)' }],
     name: 'SynthPharma AG',
     contact: [{
       name: [{ text: 'Dr. John Doe, Head of Regulatory Affairs' }],
@@ -38,13 +38,13 @@ APIX.seed = {
 
   regulator: {
     resourceType: 'Organization',
-    id: 'org-ema-srm-hmed',
-    name: 'Health Authority – Regulatory Review Division',
+    id: 'org-fda-cder-opq',
+    name: 'U.S. Food and Drug Administration',
     active: true,
     contact: [{
-      name: [{ text: 'Scientific and Regulatory Management' }],
-      telecom: [{ system: 'email', value: 'regulatory@health-authority.example', use: 'work' }],
-      address: { type: 'physical', city: 'Capital City', postalCode: '1083 HS', country: 'Country' }
+      name: [{ text: 'Center for Drug Evaluation and Research — Office of Pharmaceutical Quality' }],
+      telecom: [{ system: 'email', value: 'opq@fda.example', use: 'work' }],
+      address: { type: 'physical', city: 'Silver Spring', state: 'MD', postalCode: '20993', country: 'United States' }
     }]
   },
 
@@ -67,8 +67,8 @@ APIX.seed = {
   product: {
     resourceType: 'MedicinalProductDefinition',
     id: 'mpd-velexa175',
-    identifier: [{ system: 'http://ema.europa.eu/fhir/mpid', value: 'MPID-EU-100000067890' }],
-    description: 'Velexa 175 mg film-coated tablets — finished medicinal product (demo product context).',
+    identifier: [{ system: 'https://www.fda.gov/drugs/application-number', value: 'NDA 215123' }],
+    description: 'Velexa 175 mg film-coated tablets — finished drug product (demo product context).',
     combinedPharmaceuticalDoseForm: { coding: [{ system: 'http://standardterms.edqm.eu', code: '10221000', display: 'Film-coated tablet' }] },
     route: [{ coding: [{ system: 'http://standardterms.edqm.eu', code: '20053000', display: 'Oral use' }] }],
     name: [{

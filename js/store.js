@@ -24,15 +24,15 @@ APIX.b64 = function (str) {
 /* Regulator-produced outputs, keyed by scenario effect codes. */
 APIX.OUTPUTS = {
   ack:        { id: 'output-ack',        ctd: 'acknowledgement-receipt', title: 'Acknowledgement of Receipt' },
-  validation: { id: 'output-validation', ctd: 'validation-report',       title: 'Validation Report' },
+  validation: { id: 'output-validation', ctd: 'validation-report',       title: 'Filing Communication' },
   approval:   { id: 'docref-approval',   ctd: 'approval-letter',         title: 'Approval Letter' },
-  assessment: { id: 'docref-assessment', ctd: 'assessment-report',       title: 'Assessment Report' },
-  rejection:  { id: 'docref-rejection',  ctd: 'assessment-report',       title: 'Decision Letter (negative)' }
+  assessment: { id: 'docref-assessment', ctd: 'assessment-report',       title: 'Review Memorandum' },
+  rejection:  { id: 'docref-rejection',  ctd: 'assessment-report',       title: 'Complete Response Letter' }
 };
 
-/* The Type IB RSI exchange content (anchored in the CMC stability change). The
- * Health Authority's List of Questions and the applicant's response-to-questions
- * — surfaced as a genuine quick back-and-forth on the HA⇄Industry channel. */
+/* The FDA Information Request exchange content (anchored in the CMC stability
+ * change): FDA's quality/CMC question and the sponsor's response — surfaced as a
+ * genuine quick back-and-forth on the FDA⇄sponsor channel. */
 APIX.RSI = {
   question: 'Quality (CMC). Justify the proposed tightening of the end-of-shelf-life Water Content acceptance ' +
     'criterion (2.0% → 1.5% w/w) and confirm it is supported by the available long-term stability data. Confirm the ' +
@@ -211,7 +211,7 @@ APIX.store = {
     var now = new Date().toISOString();
     var isReg = spec.actor === 'regulator';
     var org = isReg ? APIX.seed.regulator : APIX.seed.applicant;
-    var display = isReg ? 'Health Authority' : 'SynthPharma AG';
+    var display = isReg ? 'FDA' : 'SynthPharma AG';
     // Author = the org that performed the act; custodian = the data steward.
     // For a regulator action the regulator authors and also custodies the
     // record on its side; for an applicant submission SynthPharma authors.
@@ -430,7 +430,7 @@ APIX.store = {
     // valid R5 (a Reference may carry only .display) — so the create succeeds as
     // a single, self-contained, real round-trip. Mock keeps full references.
     if (this._isLive()) this._flattenRefs(task);
-    var stored = await APIX.client.create(task, { label: 'Orchestrate — Task (Type IB variation, created)' });
+    var stored = await APIX.client.create(task, { label: 'Orchestrate — Task (Prior Approval Supplement, created)' });
     this.task = stored;                 // server-returned Task (with server meta)
     this.put(stored);
 
@@ -460,7 +460,7 @@ APIX.store = {
     });
     await this.recordProvenance({
       activity: 'CREATE', actor: 'applicant', targets: provTargets,
-      reason: 'Submitted Type IB variation — Task created (businessStatus: Submitted)'
+      reason: 'Submitted Prior Approval Supplement — Task created (businessStatus: Submitted)'
     });
     return this.task;
   },
@@ -473,7 +473,7 @@ APIX.store = {
       meta: { versionId: '1', lastUpdated: now, profile: [APIX.SYS.profile.task] },
       text: {
         status: 'generated',
-        div: '<div xmlns="http://www.w3.org/1999/xhtml">Type IB variation (B.II.d.1): tightening of the end-of-shelf-life Water Content limit for ' +
+        div: '<div xmlns="http://www.w3.org/1999/xhtml">Prior Approval Supplement: tightening of the end-of-shelf-life Water Content limit for ' +
           APIX.seed.product.name[0].productName + '.</div>'
       },
       identifier: [{ use: 'official', type: { coding: [{ system: APIX.SYS.idType, code: 'apixtaskinstance', display: 'APIX Task Instance ID' }] }, system: APIX.SYS.taskIdSystem, value: APIX.TASK_UUID }],
@@ -482,12 +482,12 @@ APIX.store = {
       businessStatus: { coding: [{ system: APIX.SYS.businessStatus, code: 'submitted', display: 'Submitted' }] },
       intent: 'proposal',
       priority: 'routine',
-      code: { coding: [{ system: APIX.SYS.taskCode, code: 'variation-type-ib', display: 'Type IB Variation' }] },
+      code: { coding: [{ system: APIX.SYS.taskCode, code: 'supplement', display: 'Prior Approval Supplement' }] },
       focus: { reference: 'MedicinalProductDefinition/' + APIX.seed.product.id, display: APIX.seed.product.name[0].productName },
       authoredOn: now,
       lastModified: now,
       requester: { reference: 'Organization/' + APIX.seed.applicant.id, display: 'SynthPharma AG' },
-      owner: { reference: 'Organization/' + APIX.seed.regulator.id, display: 'Health Authority' },
+      owner: { reference: 'Organization/' + APIX.seed.regulator.id, display: 'FDA' },
       input: this.submissionInputs
     };
   },
@@ -554,7 +554,7 @@ APIX.store = {
     }
 
     if (effect.addProcedureNo) {
-      this.task.identifier.push({ use: 'official', type: { coding: [{ system: APIX.SYS.idType, code: 'apixregulatorprocedureno', display: 'APIX Regulator Procedure Number' }] }, system: APIX.SYS.procedureSystem, value: 'PROC-2026-04210' });
+      this.task.identifier.push({ use: 'official', type: { coding: [{ system: APIX.SYS.idType, code: 'apixregulatorprocedureno', display: 'APIX Regulator Procedure Number' }] }, system: APIX.SYS.procedureSystem, value: '215123/S-005' });
     }
     if (effect.addOutputs) {
       this.task.output = this.task.output || [];

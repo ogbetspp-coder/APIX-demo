@@ -98,15 +98,15 @@
     el('focus').hidden = false;
     el('focus').innerHTML = focusShell('SynthPharma',
       'Ready to submit',
-      '<p class="focus-desc">Send the variation to the Health Authority over the live connection.</p>' +
+      '<p class="focus-desc">Send the supplement to FDA over the live connection.</p>' +
       '<div class="focus-controls">' +
-        '<button class="btn-primary" data-act="submit">Submit to Health Authority</button>' +
+        '<button class="btn-primary" data-act="submit">Submit to FDA</button>' +
       '</div>');
   }
 
   function renderReceivedFocus() {
     el('focus').hidden = false;
-    el('focus').innerHTML = focusShell('Health Authority',
+    el('focus').innerHTML = focusShell('FDA',
       'Received and checked',
       '<p class="focus-desc">Arrived instantly and passed automatic checks — no human action needed.</p>' +
       '<p class="focus-auto">Format and completeness OK.</p>');
@@ -118,7 +118,7 @@
     var continueBtn = batchChecked
       ? '<button class="btn-primary" data-act="to-decision">Continue to decision</button>'
       : '';
-    el('focus').innerHTML = focusShell('Health Authority',
+    el('focus').innerHTML = focusShell('FDA',
       'Review',
       '<p class="focus-desc">Check a manufactured batch against the new limit.</p>' +
       '<div class="batch-pick">' +
@@ -153,13 +153,13 @@
   function renderDecisionFocus() {
     el('focus').hidden = false;
     var convo = infoAsked ? rsiHtml() : '';
-    el('focus').innerHTML = focusShell('Health Authority',
+    el('focus').innerHTML = focusShell('FDA',
       'Decision',
-      '<p class="focus-desc">Approve, ask a question, or reject.</p>' +
+      '<p class="focus-desc">Approve the supplement, send an Information Request, or issue a Complete Response.</p>' +
       '<div class="decision-row">' +
         '<button class="btn-primary" data-decision="approve">Approve</button>' +
-        '<button class="btn-ghost" data-decision="info"' + (infoAsked ? ' disabled' : '') + '>Ask a question</button>' +
-        '<button class="btn-ghost" data-decision="reject">Reject</button>' +
+        '<button class="btn-ghost" data-decision="info"' + (infoAsked ? ' disabled' : '') + '>Send Information Request</button>' +
+        '<button class="btn-ghost" data-decision="reject">Issue Complete Response</button>' +
       '</div>' +
       '<div class="rsi" id="rsi">' + convo + '</div>');
   }
@@ -169,7 +169,7 @@
   function rsiHtml() {
     var answered = !!done.answered;
     var q = '<div class="msg msg-ha">' +
-      '<div class="msg-from">Health Authority</div>' +
+      '<div class="msg-from">FDA</div>' +
       '<div class="msg-body">' + esc(APIX.RSI.question) + '</div></div>';
     var a = answered
       ? '<div class="msg msg-sponsor">' +
@@ -234,7 +234,7 @@
       await store.connect();
       await store.submit();
       if (!reached['submitted']) reached['submitted'] = now();
-      logEvent('Submitted to Health Authority', 'task');
+      logEvent('Submitted to FDA', 'task');
       done.submit = now();
 
       await store.subscribe();
@@ -247,7 +247,7 @@
       await store.updateTask({ type: 'updateTask', status: 'received', businessStatus: 'received', addProcedureNo: true, addOutputs: ['ack'] });
       await delay(560);
       await store.updateTask({ type: 'updateTask', status: 'accepted', businessStatus: 'validation-successful', addOutputs: ['validation'], flexibility: true });
-      logEvent('Received and checked automatically — format and completeness OK', 'conformance');
+      logEvent('Received by FDA and checked automatically — format and completeness OK', 'conformance');
       done.received = now();
 
       await delay(520);
@@ -260,12 +260,12 @@
     }
   }
 
-  /* --- Review (Health Authority): run the batch check. --- */
+  /* --- Review (FDA): run the batch check. --- */
   async function doRunCheck() {
     inFlight = true; refresh();
     try {
       await store.updateTask({ type: 'updateTask', status: 'in-progress', businessStatus: 'under-assessment' });
-      logEvent('Under review', 'task');
+      logEvent('Under FDA review', 'task');
     } catch (e) { /* keep going — the check itself is local */ }
     batchChecked = true;
     inFlight = false;
@@ -278,7 +278,7 @@
     refresh();
   }
 
-  /* --- Decision (Health Authority). --- */
+  /* --- Decision (FDA). --- */
   async function onDecision(kind) {
     if (inFlight || active !== 'decision') return;
     if (kind === 'info' && infoAsked) return;
@@ -290,14 +290,14 @@
         logEvent('Approved', 'task');
         finish();
       } else if (kind === 'reject') {
-        await store.updateTask({ type: 'updateTask', status: 'completed', businessStatus: 'rejected', taskCode: 'rejection', addOutputs: ['rejection'], statusReason: 'The tested batch did not meet the new limit.' });
+        await store.updateTask({ type: 'updateTask', status: 'completed', businessStatus: 'rejected', taskCode: 'rejection', addOutputs: ['rejection'], statusReason: 'Complete Response: the tested batch did not meet the proposed limit.' });
         decided = 'reject';
-        logEvent('Rejected', 'task');
+        logEvent('Complete Response Letter issued', 'task');
         finish();
       } else if (kind === 'info') {
         await store.updateTask({ type: 'updateTask', status: 'on-hold', businessStatus: 'clock-stop', taskCode: 'information-request' });
         infoAsked = true;
-        logEvent('Question sent', 'notif');
+        logEvent('Information Request sent', 'notif');
         inFlight = false;
         renderFocus();
         return;
@@ -315,7 +315,7 @@
     try {
       await store.updateTask({ type: 'updateTask', status: 'in-progress', businessStatus: 'clock-restart', taskCode: 'response-to-questions' });
       done.answered = now();
-      logEvent('Question answered', 'notif');
+      logEvent('Information Request answered', 'notif');
     } catch (e) { logEvent('Answer could not be sent.'); }
     inFlight = false;
     renderFocus();
@@ -427,14 +427,14 @@
   }
 
   var BIZ_GLOSS = {
-    'submitted': 'Submitted — the variation has been lodged and is awaiting acknowledgement.',
-    'received': 'Received — the authority has acknowledged receipt of the submission.',
-    'validation-successful': 'Administratively validated — complete and correctly classified; eligible for assessment.',
-    'under-assessment': 'Under assessment — an assessor is reviewing the structured specification.',
-    'clock-stop': 'On hold — review paused pending the applicant’s response to the authority’s questions (an Information Request; EU term: RSI).',
-    'clock-restart': 'Clock restart — the applicant has responded; assessment resumes.',
-    'approved': 'Approved — the variation has been accepted; the specification change takes effect.',
-    'rejected': 'Rejected — the variation was not accepted (see the grounds on the decision letter).'
+    'submitted': 'Submitted — the supplement has been sent to FDA via the gateway and awaits acknowledgement.',
+    'received': 'Received — FDA has acknowledged receipt of the supplement.',
+    'validation-successful': 'Filed — the supplement is complete and accepted for review (21 CFR 314.101).',
+    'under-assessment': 'Under review — an FDA reviewer is assessing the structured specification.',
+    'clock-stop': 'On hold — review paused pending the sponsor’s response to an FDA Information Request.',
+    'clock-restart': 'Review resumed — the sponsor has responded to the Information Request.',
+    'approved': 'Approved — FDA approved the supplement; the specification change takes effect.',
+    'rejected': 'Not approved — FDA issued a Complete Response Letter (grounds in the letter).'
   };
 
   function taskDocsList(items, fallbackIc) {
@@ -466,22 +466,22 @@
     var card =
       '<div class="tk-card">' +
         '<div class="tk-row tk-head"><span class="tk-k">Submission</span>' +
-          '<span class="tk-v"><strong>' + esc(codeDisp || 'Variation') + '</strong></span></div>' +
+          '<span class="tk-v"><strong>' + esc(codeDisp || 'Prior Approval Supplement') + '</strong></span></div>' +
         '<div class="tk-row"><span class="tk-k">Status</span>' +
           '<span class="tk-v"><span class="badge badge-status">' + esc(t.status) + '</span>' +
           ' <span class="badge badge-biz">' + esc(bizDisp) + '</span></span></div>' +
         (gloss ? '<div class="tk-gloss">' + esc(gloss) + '</div>' : '') +
         (reason ? '<div class="tk-gloss tk-reason"><strong>Grounds:</strong> ' + esc(reason) + '</div>' : '') +
-        '<div class="tk-row"><span class="tk-k">Procedure number</span><span class="tk-v"><code>' + esc(procNo || 'not yet assigned') + '</code></span></div>' +
-        '<div class="tk-row"><span class="tk-k">Procedure thread</span><span class="tk-v"><code>' + esc(groupId || '—') + '</code> <small>(group identifier)</small></span></div>' +
-        '<div class="tk-row"><span class="tk-k">Requester</span><span class="tk-v">' + esc(requester) + ' <small>(applicant)</small></span></div>' +
-        '<div class="tk-row"><span class="tk-k">Performer</span><span class="tk-v">' + esc(performer) + ' <small>(regulator)</small></span></div>' +
+        '<div class="tk-row"><span class="tk-k">Supplement number</span><span class="tk-v"><code>' + esc(procNo || 'not yet assigned') + '</code></span></div>' +
+        '<div class="tk-row"><span class="tk-k">Review thread</span><span class="tk-v"><code>' + esc(groupId || '—') + '</code> <small>(group identifier)</small></span></div>' +
+        '<div class="tk-row"><span class="tk-k">Requester</span><span class="tk-v">' + esc(requester) + ' <small>(sponsor)</small></span></div>' +
+        '<div class="tk-row"><span class="tk-k">Performer</span><span class="tk-v">' + esc(performer) + ' <small>(FDA)</small></span></div>' +
         '<div class="tk-row tk-block"><span class="tk-k">Input documents</span><span class="tk-v">' + taskDocsList(t.input) + '</span></div>' +
         '<div class="tk-row tk-block"><span class="tk-k">Output documents</span><span class="tk-v">' + taskDocsList(t.output, 'PDF') + '</span></div>' +
       '</div>' +
       '<button class="link-btn tk-raw-toggle" id="tk-raw-toggle">Show raw FHIR JSON</button>' +
       '<pre class="modal-json tk-raw" id="tk-raw" hidden>' + APIX.highlight(t) + '</pre>';
-    el('inspect-focus').innerHTML = '<div class="if-title">Task — Type IB variation</div>' + card;
+    el('inspect-focus').innerHTML = '<div class="if-title">Task — Prior Approval Supplement</div>' + card;
   }
 
   /* APIX wrapper view — Task ▸ DocumentReference ▸ Binary (base64, real decode)
@@ -491,7 +491,7 @@
     var docref = store.get('DocumentReference/docref-spec-fhir');
     var bin = store.get('Binary/binary-spec-fhir');
     var bizDisp = (t && t.businessStatus && t.businessStatus.coding && t.businessStatus.coding[0]) ? t.businessStatus.coding[0].display : '—';
-    var codeDisp = (t && t.code && t.code.coding && t.code.coding[0]) ? t.code.coding[0].display : 'Type IB Variation';
+    var codeDisp = (t && t.code && t.code.coding && t.code.coding[0]) ? t.code.coding[0].display : 'Prior Approval Supplement';
     var att = docref && docref.content ? docref.content[0].attachment : {};
     var b64 = (bin && bin.data) || '';
     var b64short = b64.length > 88 ? b64.slice(0, 88) + '…' : b64;
@@ -502,7 +502,7 @@
           '<div class="wl-meta">' +
             '<span><code>code</code> ' + esc(codeDisp) + '</span>' +
             '<span><code>status</code> ' + esc(t ? t.status : '—') + ' · <code>businessStatus</code> ' + esc(bizDisp) + '</span>' +
-            '<span><code>requester</code> SynthPharma AG → <code>owner</code> Health Authority</span>' +
+            '<span><code>requester</code> SynthPharma AG → <code>owner</code> FDA</span>' +
           '</div>' +
           '<div class="wl-arrow">input[].valueReference →</div>' +
           '<div class="wrap-layer wl-docref">' +
