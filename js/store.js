@@ -217,7 +217,7 @@ APIX.store = {
     // record on its side; for an applicant submission SynthPharma authors.
     var agentCode = isReg ? 'custodian' : 'author';
     this._provSeq += 1;
-    return {
+    var prov = {
       resourceType: 'Provenance',
       id: 'prov-' + this._provSeq,
       target: (spec.targets || []).map(function (ref) { return { reference: ref }; }),
@@ -239,6 +239,9 @@ APIX.store = {
         who: { reference: 'Organization/' + org.id, display: display }
       }]
     };
+    // WS1 — carry the applicant's detached signature over the spec Bundle.
+    if (spec.signature) prov.signature = [spec.signature];
+    return prov;
   },
 
   /* Build, record (audit log), emit, and — when live — persist a Provenance. */
@@ -262,6 +265,23 @@ APIX.store = {
     return prov;
   },
 
+  /* ---- WS1: structured-spec integrity (sign / verify / tamper) --------- */
+  // The Bundle the regulator currently holds — pristine, or the tampered copy.
+  currentSpecBundle: function () { return this.tampered ? this.tamperedBundle : this.signedBundle; },
+  // Toggle a single-field alteration of the signed spec (the Water Content limit).
+  setTampered: function (on) {
+    this.tampered = !!on;
+    if (on && !this.tamperedBundle && window.APIX && APIX.sign && this.signedBundle) {
+      var t = APIX.sign.tamper(this.signedBundle);
+      this.tamperedBundle = t.bundle; this.tamperInfo = t.info;
+    }
+  },
+  // Verify the applicant's signature against the currently-held Bundle.
+  verifySpec: async function () {
+    if (!(window.APIX && APIX.sign) || !this.specSignature || !this.signedBundle) return null;
+    return APIX.sign.verify(this.currentSpecBundle(), this.specSignature);
+  },
+
   reset: function () {
     this._closeWebSocket();
     this.resources = {};
@@ -274,6 +294,9 @@ APIX.store = {
     this.submissionInputs = [];
     this.provenance = [];
     this._provSeq = 0;
+    // WS1 — clear the signed-spec / tamper state.
+    this.signedBundle = null; this.specSignature = null;
+    this.tampered = false; this.tamperedBundle = null; this.tamperInfo = null;
     // Fresh server state so a re-run starts clean.
     if (APIX.MockFhirServer) {
       APIX.server = new APIX.MockFhirServer();
@@ -453,14 +476,25 @@ APIX.store = {
     // Subscription is registered later, in subscribe(); it drives Act 3.)
     this.bus.dispatchEvent(new CustomEvent('task', { detail: { task: this.task, firstTime: true } }));
 
-    // Audit: the submission created the Task and its input DocumentReferences.
+    // WS1 — seal the structured specification: JCS-canonicalize the PQI Bundle
+    // and sign it (RSA-PSS / SHA-256, detached JWS) so the regulator can verify
+    // integrity. The detached signature rides the submission Provenance.
+    this.signedBundle = JSON.parse(JSON.stringify(APIX.pqi.bundle));
+    this.specSignature = (window.APIX && APIX.sign) ? await APIX.sign.signBundle(this.signedBundle) : null;
+    this.tampered = false; this.tamperedBundle = null; this.tamperInfo = null;
+
+    // Audit: the submission created the Task and its input DocumentReferences, and
+    // carries the applicant's signature over the spec Bundle.
     var provTargets = ['Task/' + this.task.id];
     this.submissionInputs.forEach(function (inp) {
       if (inp.valueReference && inp.valueReference.reference) provTargets.push(inp.valueReference.reference);
     });
+    var bid = (APIX.pqi.bundle && APIX.pqi.bundle.id) ? APIX.pqi.bundle.id : 'bundle-pqi';
+    provTargets.push('Bundle/' + bid);
     await this.recordProvenance({
       activity: 'CREATE', actor: 'applicant', targets: provTargets,
-      reason: 'Submitted Prior Approval Supplement — Task created (businessStatus: Submitted)'
+      reason: 'Submitted Prior Approval Supplement — Task created (businessStatus: Submitted)',
+      signature: this.specSignature
     });
     return this.task;
   },

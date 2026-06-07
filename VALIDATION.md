@@ -34,6 +34,17 @@ itself** — not a defect in the demo:
 Remaining non-error notes are benign and terminology-server-dependent (EDQM Standard
 Terms, `dom-6` narrative best-practice, draft-CodeSystem info).
 
+## Cryptographic integrity (signed Provenance)
+The submission `Provenance` now carries a FHIR **`Signature`** — a detached **JWS
+(alg PS256 = RSA-PSS / SHA-256)** over the **RFC 8785 (JCS)** canonical PQI Bundle,
+with `Signature.type` = `urn:iso-astm:E1762-95:2013#1.2.840.10065.1.12.1.1`
+("Author's Signature", confirmed against the R5 `signature-type` value set),
+`targetFormat application/fhir+json`, `sigFormat application/jose`. It validates at
+**0 errors** (latest run: `Provenance.json — 0 errors, 3 warnings`); the warnings are
+only the absent-terminology-server note on the BCP-13 mime codes and `dom-6`. Keys are
+clearly-labelled **illustrative demo keys**, embedded so the sign → verify → tamper →
+re-verify beat runs offline and on any backend.
+
 ## What we fixed (validator-derived)
 A baseline run loaded both IGs (APIX = 4,248 resources; PQI v1.0.0) and pinpointed
 the exact gaps — now closed:

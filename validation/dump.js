@@ -10,7 +10,7 @@ const ROOT = path.join(__dirname, '..');
 global.window = global;
 global.CustomEvent = class extends Event { constructor(t, i) { super(t); this.detail = i && i.detail; } };
 
-['highlight', 'codesystems', 'terminology', 'config', 'fhir-server', 'client', 'seed', 'pqi', 'scenario', 'store'].forEach(function (f) {
+['highlight', 'codesystems', 'terminology', 'config', 'fhir-server', 'client', 'seed', 'pqi', 'sign', 'scenario', 'store'].forEach(function (f) {
   eval(fs.readFileSync(path.join(ROOT, 'js', f + '.js'), 'utf8'));
 });
 

@@ -37,6 +37,7 @@
   var answered = false;        // the applicant responded to the Information Request
   var decided = null;          // 'approve' | 'reject'
   var worklistOpen = false;    // the FDA worklist row is expanded
+  var sigVerify = null;        // WS1: null = not verified | true = valid | false = invalid
 
   var reached = {};            // status code -> Date (for elapsed)
   var lastNotif = null;        // most recent notification bundle
@@ -302,6 +303,31 @@
       (batchScreened ? batchResultHtml() : '<p class="ad-hint">Select a batch and screen it against the structured ObservationDefinitions.</p>') +
     '</div>';
 
+    // Cryptographic integrity — verify the applicant's signature; tamper to break it.
+    if (store.specSignature) {
+      var verdict = (sigVerify === null)
+        ? '<span class="sig-idle">— not verified yet —</span>'
+        : (sigVerify
+            ? '<span class="sig-ok">&#10003; VALID &middot; signed by SynthPharma &middot; content intact</span>'
+            : '<span class="sig-bad">&#10007; INVALID &middot; content was altered after signing</span>');
+      body += '<div class="ad-sec sig-sec">' +
+        '<div class="ad-sec-head">Cryptographic integrity</div>' +
+        '<p class="sig-meta">Specification sealed by SynthPharma &mdash; a detached <strong>RSA-PSS / SHA-256</strong> ' +
+          'signature over the <strong>RFC 8785 (JCS)</strong> canonical Bundle. ' +
+          '<button class="link-btn" data-act="sig-json">view signature { }</button> ' +
+          '<span class="sig-demo">illustrative demo key</span></p>' +
+        '<label class="sig-tamper"><input type="checkbox" id="sig-tamper-cb"' + (store.tampered ? ' checked' : '') + '>' +
+          ' Tamper &mdash; alter the signed Water Content limit after signing</label>' +
+        (store.tampered && store.tamperInfo
+          ? '<p class="sig-altered">Altered: ' + esc(store.tamperInfo.field) + ' &middot; ' +
+              esc(store.tamperInfo.from) + ' &rarr; ' + esc(store.tamperInfo.to) + '</p>' : '') +
+        '<div class="sig-row">' +
+          '<button class="act-btn act-next" id="sig-verify"><span class="act-label">Verify signature</span></button>' +
+          '<div class="sig-verdict">' + verdict + '</div>' +
+        '</div>' +
+      '</div>';
+    }
+
     el('authority-detail-body').innerHTML = body;
   }
 
@@ -520,6 +546,18 @@
   }
   function doToggleSpec() { specOpen = !specOpen; renderAuthorityDetail(); }
 
+  // WS1 — verify the spec signature against the (possibly tampered) Bundle.
+  async function doVerify() {
+    if (inFlight) return;
+    sigVerify = await store.verifySpec();
+    renderAuthorityDetail();
+  }
+  function viewSignature() {
+    var prov = (store.provenance || []).filter(function (p) { return p.signature; })[0];
+    openModal('Provenance — signed specification (FHIR Signature)',
+      '<pre class="modal-json">' + APIX.highlight(prov || { resourceType: 'Provenance', signature: [store.specSignature] }) + '</pre>');
+  }
+
   /* ============================ MODAL ================================== */
   function openModal(title, html) {
     el('modal-title').textContent = title;
@@ -565,7 +603,7 @@
   function resetAll() {
     state = 'idle'; inFlight = false;
     batchKey = 'good'; batchScreened = false; specOpen = false;
-    infoAsked = false; answered = false; decided = null; worklistOpen = false;
+    infoAsked = false; answered = false; decided = null; worklistOpen = false; sigVerify = null;
     reached = {}; lastNotif = null; inbox = []; ioEntries = []; auditEntries = [];
     store.reset();
     el('exch-log').innerHTML = '<div class="empty">No exchanges yet. Submit the supplement to begin.</div>';
@@ -675,6 +713,10 @@
     // Batch picker / spec toggle (authority detail).
     var bp = ev.target.closest('[data-batch]'); if (bp) { doScreenBatch(bp.getAttribute('data-batch')); return; }
 
+    // WS1 — signature tamper toggle + verify.
+    if (ev.target.id === 'sig-tamper-cb') { store.setTampered(ev.target.checked); sigVerify = null; renderAuthorityDetail(); return; }
+    if (ev.target.closest('#sig-verify')) { doVerify(); return; }
+
     // Notification / provenance viewers.
     if (ev.target.closest('[data-view-notif]')) { viewNotif(); return; }
     var pv = ev.target.closest('[data-prov]'); if (pv) { viewProvenance(pv.getAttribute('data-prov')); return; }
@@ -689,7 +731,7 @@
 
     // Generic act buttons (spec toggle lives here too).
     var a = ev.target.closest('[data-act]');
-    if (a) { if (a.getAttribute('data-act') === 'spec') doToggleSpec(); return; }
+    if (a) { var av = a.getAttribute('data-act'); if (av === 'spec') doToggleSpec(); else if (av === 'sig-json') viewSignature(); return; }
 
     // Action buttons by id.
     var id = ev.target.closest('button') && ev.target.closest('button').id;

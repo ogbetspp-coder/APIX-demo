@@ -46,7 +46,7 @@ const fs=require("fs"), path=require("path");
 const ROOT=process.argv[1], OUT=process.argv[2];
 global.window=global;
 global.CustomEvent=class extends Event{constructor(t,i){super(t);this.detail=i&&i.detail;}};
-["highlight","codesystems","terminology","config","fhir-server","client","seed","pqi","scenario","store"]
+["highlight","codesystems","terminology","config","fhir-server","client","seed","pqi","sign","scenario","store"]
   .forEach(f=>eval(fs.readFileSync(path.join(ROOT,"js",f+".js"),"utf8")));
 const w=(n,o)=>fs.writeFileSync(path.join(OUT,n+".json"),JSON.stringify(o,null,2));
 w("Organization-regulator", APIX.seed.regulator);

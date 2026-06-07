@@ -285,6 +285,21 @@ table.grid, .val-table, .ectd-table, .audit-table { border-collapse: collapse; }
 .val-banner-fail { color: #fff; background: var(--red); }
 .val-banner-pass { color: var(--green); background: var(--green-bg); border: 1px solid #c3ddc4; }
 
+/* WS1 — cryptographic integrity (sign / verify / tamper) */
+.sig-meta { font-size: 12px; color: var(--ink-soft); line-height: 1.5; margin: 8px 0 10px; }
+.sig-demo { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--amber);
+  background: var(--amber-bg); border: 1px solid #e6d49a; border-radius: 999px; padding: 1px 7px; white-space: nowrap; }
+.sig-tamper { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--ink); cursor: pointer;
+  background: var(--bg-alt); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 11px; }
+.sig-tamper input { cursor: pointer; }
+.sig-altered { font-size: 12px; color: var(--red); margin: 8px 0 0; font-weight: 700; }
+.sig-row { display: flex; align-items: center; gap: 12px; margin-top: 10px; flex-wrap: wrap; }
+.sig-row .act-btn { flex: 0 0 auto; }
+.sig-verdict { font-size: 13px; font-weight: 700; }
+.sig-idle { color: var(--ink-faint); font-weight: 400; font-style: italic; }
+.sig-ok { color: var(--green); }
+.sig-bad { color: var(--red); }
+
 .fda-honesty { font-size: 12.5px; line-height: 1.55; color: var(--ink); background: var(--amber-bg);
   border: 1px solid #e6d49a; border-left: 3px solid var(--amber); border-radius: var(--radius); padding: 9px 12px; margin: 4px 0 6px; }
 
