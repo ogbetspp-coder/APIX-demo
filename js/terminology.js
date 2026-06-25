@@ -12,6 +12,7 @@ APIX.terminology = (function () {
   var LIMS_TESTS = 'http://synthpharma.example/fhir/CodeSystem/lims-test-codes';
   var LIMS_UNITS = 'http://synthpharma.example/fhir/CodeSystem/lims-units';
   var PQI_CS = 'http://hl7.org/fhir/uv/pharm-quality/CodeSystem/cs-local-codes-drug-pq-example';
+  var SPONSOR_TESTS = 'http://synthpharma.example/fhir/CodeSystem/velexa-local-tests';
   var UCUM = 'http://unitsofmeasure.org';
 
   /* R5 ConceptMap: SynthPharma LIMS local test codes -> PQI drug spec codes. */
@@ -41,6 +42,28 @@ APIX.terminology = (function () {
     }]
   };
 
+  /* R5 ConceptMap: LIMS nitrosamine code -> the sponsor-local NDSRI test code
+     (the new test this supplement adds; not in the PQI example CS). */
+  var cmNitro = {
+    resourceType: 'ConceptMap',
+    id: 'cm-lims-to-ndsri',
+    url: 'http://synthpharma.example/fhir/ConceptMap/lims-to-ndsri',
+    version: '1.0.0',
+    name: 'LimsToNdsri',
+    title: 'SynthPharma LIMS nitrosamine code → Velexa NDSRI test code',
+    status: 'active',
+    experimental: false,
+    sourceScopeUri: LIMS_TESTS,
+    targetScopeUri: SPONSOR_TESTS,
+    group: [{
+      source: LIMS_TESTS,
+      target: SPONSOR_TESTS,
+      element: [
+        { code: 'NTRSM-LCMS', display: 'N-nitroso-velexate (LC-MS/MS)', target: [{ code: 'NDSRI', display: 'N-Nitroso-velexate (NDSRI)', relationship: 'equivalent' }] }
+      ]
+    }]
+  };
+
   /* R5 ConceptMap: LIMS unit shorthand -> UCUM. */
   var cmUnits = {
     resourceType: 'ConceptMap',
@@ -63,7 +86,7 @@ APIX.terminology = (function () {
     }]
   };
 
-  var conceptMaps = [cmTests, cmUnits];
+  var conceptMaps = [cmTests, cmNitro, cmUnits];
 
   /* Mirror ConceptMap/$translate: return the first matching target Coding. */
   function translate(system, code) {

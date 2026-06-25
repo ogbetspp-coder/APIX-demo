@@ -41,7 +41,7 @@ APIX.CS = {
   taskCode: {
     'initial-submission': 'Initial Submission',
     'supplement': 'Supplement / Variation',
-    'variation-type-ib': 'Type IB Variation',
+    'prior-approval-supplement': 'Prior Approval Supplement (PAS)',
     'response-to-questions': 'Response to Information Request',
     'information-request': 'List of Questions / Information Request',
     'validation-report': 'Validation Report',

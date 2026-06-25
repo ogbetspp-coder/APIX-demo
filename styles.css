@@ -416,3 +416,10 @@ table.grid, .val-table, .ectd-table, .audit-table { border-collapse: collapse; }
   display: flex; align-items: center; gap: 7px; }
 .val-banner-fail::before { content: "\2715"; font-weight: 800; font-size: 14px; }
 .val-table .val-fail-row td.fail { background: var(--red); color: #fff; }
+
+/* ===================== FOCAL POINT (recede the idle party) ============== */
+.party { transition: opacity .25s ease; }
+.console[data-turn="applicant"] #authority,
+.console[data-turn="authority"] #applicant { opacity: .5; }
+.console[data-turn="applicant"] #applicant,
+.console[data-turn="authority"] #authority { opacity: 1; }

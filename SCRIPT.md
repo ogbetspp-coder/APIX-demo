@@ -49,9 +49,10 @@ the safety net — if anything wobbles live, flip back to Mock and keep going.
 - **[Next → "Connect"]** "APIX Step 1 — register `Organization` + `Endpoint`,
   authenticate (SMART Backend Services; simulated here, labeled in About)."
 - **[Optional: flip Backend → Live/Local]** "Same UI, real server." 
-- **[Next → "Submit"]** "Steps 2–4: each document streamed as `Binary`, described by
-  `DocumentReference`, orchestrated by one `Task` — the spec carried **twice**, PDF
-  and structured FHIR. APIX is payload-agnostic." On **Live**: click **View on public
+- **[Next → "Submit"]** "Steps 2–4: the spec is streamed as a `Binary`, described by a
+  `DocumentReference`, orchestrated by one `Task` — carried as **one structured
+  payload** (the eCTD 3.2.P.5.1 view is a *rendering* of that same data, not a second
+  file). APIX is payload-agnostic." On **Live**: click **View on public
   server** — "this `Task` is now on a FHIR server we don't control. Open it
   yourself." FDA hook: "This is the FHIR-native rendering of an **ESG-NextGen-style**
   submit-and-track API."

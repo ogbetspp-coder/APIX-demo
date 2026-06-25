@@ -49,6 +49,7 @@
   function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
   function now() { return new Date(); }
   function ts(d) { d = d || now(); return d.toTimeString().slice(0, 8); }
+  function tsm(d) { d = d || now(); return ts(d) + '.' + ('00' + d.getMilliseconds()).slice(-3); }
 
   function batchLabel() { return (APIX.pqi.batches[batchKey] || {}).label || batchKey; }
   function failingCheck() {
@@ -181,7 +182,7 @@
     var to = dir === 'in' ? 'to SynthPharma' : 'to FDA';
     return '<div class="xrow xrow-' + dir + '" data-io="' + e.id + '">' +
       '<button class="xrow-sum">' +
-        '<span class="xrow-time">' + esc(ts(e.ts)) + '</span>' +
+        '<span class="xrow-time">' + esc(tsm(e.ts)) + '</span>' +
         '<span class="xrow-dir" title="' + esc(to) + '">' + arrow + '</span>' +
         '<span class="xrow-method io-method">' + esc(req.method || '') + '</span>' +
         '<span class="xrow-path">' + esc(req.url || '') + '</span>' +
@@ -223,7 +224,7 @@
     }).join('');
     return '<div class="xrow xrow-out xrow-group">' +
       '<button class="xrow-sum">' +
-        '<span class="xrow-time">' + esc(ts(g.items[0].ts)) + '</span>' +
+        '<span class="xrow-time">' + esc(tsm(g.items[0].ts)) + '</span>' +
         '<span class="xrow-dir">→</span>' +
         '<span class="xrow-method io-method">MAP</span>' +
         '<span class="xrow-path">ConceptMap/$translate</span>' +
@@ -504,12 +505,23 @@
   function addAudit(p) { auditEntries.push(p); renderAudit(); }
 
   /* ============================ RENDER ALL ============================== */
+  // Focal point: recede the party that isn't this beat's actor (Exchange never dims).
+  function setFocus() {
+    var applicantTurn = (state === 'idle' || state === 'clock-stop');
+    var authorityTurn = (state === 'submitted' || state === 'received' ||
+      state === 'validation-successful' || state === 'under-assessment' || state === 'clock-restart');
+    var turn = applicantTurn ? 'applicant' : (authorityTurn ? 'authority' : 'none');
+    var c = document.querySelector('.console');
+    if (c) c.setAttribute('data-turn', turn);
+  }
+
   function render() {
     el('case-no').textContent = (state === 'idle') ? '—' : caseNo();
     renderAuthoring();
     renderApplicant();
     renderAuthority();
     renderStateBar();
+    setFocus();
   }
 
   /* ============================ HANDLERS =============================== */
@@ -891,6 +903,19 @@
     if (id === 'reg-info') return doInfoRequest();
     if (id === 'reg-approve') return doDecision('approve');
     if (id === 'reg-reject') return doDecision('reject');
+  });
+
+  // Keyboard (stage QoL): Esc closes the modal; Enter fires the suggested next
+  // workflow action (the accent-highlighted button), so the demo drives forward.
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Escape') { if (!el('modal').hidden) { closeModal(); } return; }
+    if (ev.key === 'Enter') {
+      if (!el('modal').hidden || inFlight) return;
+      var tag = ev.target && ev.target.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      var btn = document.querySelector('#applicant-actions .act-next:not([disabled]), #authority-actions .act-next:not([disabled])');
+      if (btn) { ev.preventDefault(); btn.click(); }
+    }
   });
 
   el('resetbtn').addEventListener('click', resetAll);
